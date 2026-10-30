@@ -3,21 +3,20 @@ package com.infinifolder.audio
 import android.content.Context
 import android.net.Uri
 import com.infinifolder.audio.analysis.PlaybackPcmAnalyzer
-import com.infinifolder.audio.decoder.AlacAndMpeg2Decoder
-import com.infinifolder.audio.decoder.BuiltInAudioDecoders
+import com.infinifolder.audio.stream.FileAudioInput
 import java.io.File
 
 /** Default codec composition. It has no dependency on a viewer, storage runtime or audio output. */
 object AudioProcessing : AudioProcessor {
-    private val processor = AudioDecoderRegistry(BuiltInAudioDecoders.adapters) { probe ->
-        BuiltInAudioDecoders.isSupported(probe.bytes, probe.extension)
-    }
-    val supportedExtensions: Set<String> get() = BuiltInAudioDecoders.SUPPORTED_EXTENSIONS
+    private val files = AudioFileProcessor(listOf(AndroidPcmDecoder))
+    private val platformExtensions = setOf("ogg", "oga", "opus", "mka", "weba", "mp4", "amr", "awb")
+    val supportedExtensions: Set<String> get() = PortableAudioProcessing.supportedExtensions + platformExtensions
     val metadata: AudioMetadataReader = AndroidAudioMetadataReader
 
-    override fun isSupported(probe: AudioProbe): Boolean = processor.isSupported(probe)
+    override fun isSupported(probe: AudioProbe): Boolean = PortableAudioProcessing.isSupported(probe) || probe.normalizedExtension in platformExtensions
     override fun decode(request: AudioDecodeRequest, observer: AudioDecodeObserver?): AudioDecodeResult? =
-        processor.decode(request, observer)
+        files.decodeBuffered(com.infinifolder.audio.stream.MemoryAudioInput(request.bytes,
+            "source.${request.probe.normalizedExtension}", request.file), observer = observer)
 
     /** Android URI setup is an edge adapter for providers that cannot supply a descriptor. */
     fun readContentTags(context: Context, uri: Uri): AudioTags =
@@ -31,20 +30,22 @@ object AudioProcessing : AudioProcessor {
         onSamples: (FloatArray, Int, Int) -> Unit
     ): AudioAnalysisSession = PlaybackPcmAnalyzer(path, playback, onFailure, onSamples)
 
-    fun prefersBufferedDecode(file: File): Boolean {
-        val ext = file.extension.lowercase()
-        if (ext in setOf(
-            "mp2", "alac", "mod", "s3m", "xm", "it", "mid", "midi", "kar", "rmi",
-            "sf2", "sfz", "pat", "dro", "imf", "vgm", "vgz", "ym", "nsf", "spc", "sid",
-            "dsf", "dff", "tta", "wv", "ra", "ac3", "eac3", "mlp", "thd", "wma",
-            "adx", "g722", "gsm", "caf", "voc", "au", "snd", "8svx", "svx", "16sv", "maud",
-            "w64", "rf64", "avr", "ircam", "sph", "pvf", "wve", "htk"
-        )) return true
-        return ext == "m4a" && runCatching {
-            val head = ByteArray(128 * 1024)
-            val read = file.inputStream().use { it.read(head) }
-            AlacAndMpeg2Decoder.canDecode(head.copyOf(read.coerceAtLeast(0)), ext)
-        }.getOrDefault(false)
-    }
+    fun prefersBufferedDecode(file: File): Boolean = PortableAudioProcessing.prefersBufferedDecode(file)
 
+    fun openPcm(input: AudioInput, preference: DecoderPreference = DecoderPreference.PLATFORM_FIRST): PcmStream =
+        files.openPcm(input, preference)
+
+    fun prepareForOutput(
+        source: File,
+        destination: File,
+        preference: DecoderPreference = DecoderPreference.PLATFORM_FIRST,
+        observer: AudioPreparationObserver? = null,
+        cancelled: () -> Boolean = { false }
+    ): AudioPreparation = files.prepare(FileAudioInput(source), destination, preference, observer, cancelled)
+
+    fun readDuration(file: File): Long {
+        runCatching { metadata.readTags(AudioMetadataSource.LocalFile(file)).duration?.toLongOrNull() }
+            .getOrNull()?.takeIf { it > 0 }?.let { return it }
+        return files.durationMs(FileAudioInput(file))
+    }
 }

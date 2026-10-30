@@ -30,7 +30,6 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
 }
 
 dependencies {
-    api(project(":audio-api"))
-    implementation("javazoom:jlayer:1.0.1")
+    api(project(":audio-core"))
     testImplementation("junit:junit:4.13.2")
 }

@@ -1,6 +1,6 @@
 package com.infinifolder.audio.tracker
 
-import android.util.Log
+import java.util.logging.Logger
 import com.infinifolder.audio.model.AudioPcmData
 
 internal object OpenMpt {
@@ -17,9 +17,9 @@ internal object OpenMpt {
             System.loadLibrary("openmpt")
             System.loadLibrary("infiniopenmpt")
             isLoaded = nativeIsAvailable()
-            Log.i(TAG, "libopenmpt initialized successfully via JNI")
+            Logger.getLogger(TAG).fine("libopenmpt initialized successfully via JNI")
         } catch (e: Throwable) {
-            Log.w(TAG, "libopenmpt JNI not available, will use fallback engine: ${e.message}")
+            Logger.getLogger(TAG).fine("libopenmpt JNI not available, will use fallback engine: ${e.message}")
             isLoaded = false
         }
     }
@@ -45,7 +45,7 @@ internal object OpenMpt {
                 null
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "OpenMpt render failed: ${e.message}")
+            Logger.getLogger(TAG).fine("OpenMpt render failed: ${e.message}")
             null
         }
     }

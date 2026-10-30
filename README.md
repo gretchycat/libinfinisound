@@ -1,67 +1,85 @@
 # libinfinisound
 
-Audio parsing, decoding, synthesis, metadata, playlists and signal analysis extracted from [InfiniFolder](https://github.com/gretchycat/infinifolder). Audio output, player queues, UI, storage/cache ownership and Cast routing belong to the consuming application.
-
-Codec adapters retain libopenmpt with its Kotlin tracker fallback, JLayer MPEG Layer II decoding, bundled Java ALAC decoding, MIDI and soundbank synthesis, chiptune rendering and the other existing format parsers. Third-party codec types do not appear in the common interface. This repository move changes no format support or rendering behavior.
+Audio parsing, decoding, synthesis, metadata, playlists and signal analysis extracted from [InfiniFolder](https://github.com/gretchycat/infinifolder). Output devices, playback queues, UI, source staging and Cast routing are owned by the consuming application.
 
 ## Modules
 
-| Module | Responsibility |
-| --- | --- |
-| `audio-api` | Processing contracts, PCM, metadata inputs/results, playlist/CUE/CDDB parsing, signal metrics; no third-party codecs. |
-| `audio-processing` | Default codec composition, decoders and synthesizers, metadata probing, PCM/spectrum analysis, optional tracker JNI. Depends on `audio-api`. |
+| Module | Responsibility | Platform |
+| --- | --- | --- |
+| `audio-api` | Processing and PCM stream contracts, PCM/metadata models, playlists/CUE/CDDB, signal metrics | JVM, no Android dependency |
+| `audio-core` | Portable MP3/AAC/FLAC/WAVE decoding, existing specialized decoders and synthesis, codec selection/fallback, PCM file preparation and signal analysis | JVM, no Android dependency |
+| `audio-processing` | Android composition, MediaExtractor/MediaCodec decoder adapter, Android metadata and playhead analysis, optional tracker JNI packaging | Android API 26+ |
 
-These are Android libraries targeting Java 17, compile SDK 36 and Android API 26 or later. Processing uses Android media APIs for metadata and streamed analysis; the contracts use Kotlin/JDK types.
+Portable MP3 uses JLayer; AAC uses our ADTS/MP4 demuxers and a JAAD synthesis adapter; FLAC and WAVE have library-owned streaming parsers/decoders. Each backend implements `PcmDecoder`. Third-party codec types and Android media objects do not appear in the PCM contracts. Existing MIDI, tracker, soundbank and chiptune renderers remain available through an adapter.
 
 ## Build
 
-Install Gradle, JDK 17 or later and Android SDK 36. Set `ANDROID_HOME` or create an untracked `local.properties` containing `sdk.dir=/path/to/android-sdk`.
+JDK 17 or later and Gradle are needed. Build and test the portable JARs without an Android SDK:
 
 ```sh
-gradle :audio-api:assembleDebug :audio-processing:assembleDebug
-gradle :audio-processing:testDebugUnitTest
+gradle -PportableOnly=true :audio-core:build
 ```
 
-AARs are written to each module's `build/outputs/aar/` directory. Dependency versions are in the root build; `--offline` works with a populated dependency cache.
+Build the Android adapter with Android SDK 36 configured through `ANDROID_HOME` or an untracked `local.properties` containing `sdk.dir=/path/to/android-sdk`:
 
-In Termux, the native build uses installed `clang`, `patchelf`, libopenmpt and its dependencies from the Termux prefix. Configure the native AAPT2 override in Gradle as needed. JNI sources, the build script and packaged native dependencies belong to `audio-processing`. Outside that configuration the existing Kotlin tracker fallback remains available; this move adds no new NDK build path.
+```sh
+gradle :audio-core:test :audio-processing:assembleDebug
+```
+
+Use `--offline` when dependencies are cached. The portable artifacts are in `audio-api/build/libs/` and `audio-core/build/libs/`; the Android AAR is in `audio-processing/build/outputs/aar/`.
+
+In Termux, optional tracker JNI packaging uses installed clang, patchelf, libopenmpt and its dependencies from the Termux prefix. Configure native AAPT2 in Gradle as needed. Outside this configuration the existing Kotlin tracker fallback is retained; no new NDK build path is introduced here.
 
 ## Import into another build
 
-Check out this repository at a pinned revision, for example as a Git submodule. In the host's `settings.gradle.kts`:
+Pin the repository as a Git submodule and add this to the host's `settings.gradle.kts`:
 
 ```kotlin
 includeBuild("libraries/libinfinisound")
 ```
 
-Then select the dependency needed by each consumer:
+Choose one dependency:
 
 ```kotlin
-// Contracts and playlist parsing:
-implementation("io.github.gretchycat.libinfinisound:audio-api:0.1.0")
-
-// Full processing, including the API:
-implementation("io.github.gretchycat.libinfinisound:audio-processing:0.1.0")
+// Contracts and playlist parsing only:
+implementation("io.github.gretchycat.libinfinisound:audio-api:0.2.0")
+// Portable processing for a desktop JVM:
+implementation("io.github.gretchycat.libinfinisound:audio-core:0.2.0")
+// Android composition, including the portable core and API:
+implementation("io.github.gretchycat.libinfinisound:audio-processing:0.2.0")
 ```
 
-Gradle substitutes these coordinates with the checked-out source. These are composite-build project coordinates; this repository has not published artifacts to Maven Central. InfiniFolder pins its implementation with a submodule commit.
+Gradle substitutes these coordinates with the pinned source. Artifacts have not been published to Maven Central. The consuming Git submodule commit pins the implementation.
 
-## Use
+## Streaming and platform selection
 
 ```kotlin
-import com.infinifolder.audio.AudioDecodeRequest
-import com.infinifolder.audio.AudioProbe
-import com.infinifolder.audio.AudioProcessing
-import com.infinifolder.audio.AudioProcessor
+import com.infinifolder.audio.*
+import com.infinifolder.audio.stream.FileAudioInput
 
-val processor: AudioProcessor = AudioProcessing
-val supported = processor.isSupported(AudioProbe(headerBytes, extension))
-val result = processor.decode(AudioDecodeRequest(bytes, extension, stagedFile))
-val pcm = result?.pcm
+val processor = AudioFileProcessor() // portable backend registry
+processor.openPcm(FileAudioInput(sourceFile), DecoderPreference.PORTABLE_ONLY).use { pcm ->
+    val samples = IntArray(4096 * pcm.format.channels)
+    while (true) {
+        val count = pcm.read(samples, 0, samples.size)
+        if (count < 0) break
+        // Forward these interleaved, left-aligned signed PCM samples to your output adapter.
+    }
+}
 ```
 
-`AudioDecoderRegistry` accepts ordered `AudioDecoder` adapters. Future MIDI, tracker, VGM and other composite-audio implementations can use the same interface. Current codecs retain their buffered rendering and duration limits; this move adds no incremental composite rendering.
+Android callers use `AudioProcessing.openPcm` or `AudioProcessing.prepareForOutput`. The Android composition registers the platform decoder inside the library. Preferences are `PLATFORM_FIRST`, `PORTABLE_FIRST` and `PORTABLE_ONLY`; existing specialized renderers retain their previous priority. A failed prepared-file decode is discarded before another backend starts from the source's beginning. Cancellation closes decoder handles and discards partial PCM. A successful silent stream is valid audio.
 
-The caller owns input files, descriptors and staging leases. Detection accepts header bytes, and `AudioProcessing.createAnalyzer` streams analysis blocks near a supplied playhead. Silent PCM is valid audio. Decode diagnostics are per request and have no dependency on a playback service.
+The PCM stream carries its sample rate, channel count, precision and optional exact frame count. Samples are left-aligned in 32-bit integers. FLAC decoding preserves up to 32-bit source samples. The old `AudioProcessor.decode`/`AudioPcmData` buffered API remains available as a 16-bit compatibility API; it is not the high-precision streaming API.
 
-See [architecture and extraction history](docs/architecture.md) for adapter details, source lifetimes and validation. Existing third-party source notices are retained.
+MP3 Xing/LAME timing and supported MP4 edit lists trim encoder delay and padding using metadata, never by detecting zero-valued samples. Complex MP4 edit lists or unsupported AAC features can fall back to the Android backend.
+
+## InfiniFolder integration and current costs
+
+InfiniFolder's normal and gapless preload paths give encoded sources to `AudioProcessing.prepareForOutput` and give only the resulting PCM WAVE files to MediaPlayer for output. Duration probing also goes through the library. Player code does not invoke the compressed-format extractor/codec or pass an original compressed file to MediaPlayer.
+
+The app currently prepares the PCM file before playback, preserving its existing MediaPlayer gapless handoff. Standard codec processing uses bounded sample buffers, but decoded files consume disk space and preparation can increase startup/preload time. The RIFF writer rejects output over its 4 GiB size limit. A future output adapter can consume `PcmStream` directly to avoid full-file staging. Existing composite renderers still use their previous buffered synthesis limits.
+
+The host owns source/cache leases and output files. `PcmStream.close()` releases decoder-owned handles. Other source permissions and playback lifetimes remain host responsibilities.
+
+See [portability roadmap](docs/portability-roadmap.md), [architecture](docs/architecture.md) and [codec implementations](docs/third-party.md). iOS native binaries and desktop output integrations are future work, not provided by a JVM JAR.

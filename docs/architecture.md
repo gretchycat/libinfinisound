@@ -1,61 +1,50 @@
-# Architecture and extraction history
+# Parsing, decoding and output boundaries
 
-Extracted 2026-10-30 from `viewer-audio`, following the [InfiniFolder library separation audit](https://github.com/gretchycat/infinifolder/blob/main/docs/library-separation-audit.md). This increment preserves the existing format implementations and playback policy. It adds no formats or synthesis features.
+Updated 2026-10-30 for the portable codec and Android adapter increment.
 
-## Modules and consumers
-
-| Module | Owns | Dependencies |
-| --- | --- | --- |
-| `audio-api` | `AudioProcessor`, codec adapter contract, decode request/result/events, PCM, metadata source and result types, playlist/CUE and CDDB record parsing, signal metric types | Kotlin/JDK types; Android library packaging with no Android types in the public contracts |
-| `audio-processing` | Default codec composition, decoders, MIDI/tracker/chiptune rendering, soundbanks, PCM and spectrum analysis, Android metadata and analysis adapters | `audio-api`, private JLayer dependency, bundled ALAC implementation, optional libopenmpt JNI |
-| `viewer-audio` | Player service, MediaPlayer/AudioTrack output, gapless queue/preload/handoff, UI/visualizer presentation, diagnostics history, source staging and leases, Cast/DLNA | `audio-processing`, existing viewer/storage integration and output dependencies |
-| `storage-engine` | Existing playlist-backed virtual directories and source resolution | `audio-api` for playlist parsing; no dependency on codec implementations |
-
-The full application and standalone audio host already consume `viewer-audio`, which now consumes these libraries. `audio-processing` has no dependency on an Activity, player service, storage runtime, cache, Cast service or output device. It remains an Android-compatible library because metadata and streamed analysis use Android media decoders. The small API does not require those implementations.
-
-## Common codec interface
-
-Use `AudioProcessing` as an `AudioProcessor`:
-
-```kotlin
-val processor: AudioProcessor = AudioProcessing
-val supported = processor.isSupported(AudioProbe(headerBytes, extension))
-val decoded = processor.decode(AudioDecodeRequest(bytes, extension, stagedFile))
-val pcm = decoded?.pcm
+```mermaid
+flowchart LR
+    Host[Player / queue / staging] --> API[Library processing facade]
+    API --> Registry[Codec selection and fallback]
+    Registry --> Portable[Portable MP3 / AAC / FLAC / WAVE]
+    Registry --> Composite[MIDI / tracker / chiptune adapters]
+    Registry --> Android[Android extractor / codec adapter]
+    Portable --> PCM[Common PCM stream]
+    Composite --> PCM
+    Android --> PCM
+    PCM --> Output[Host output adapter]
 ```
 
-Every default format is registered through `AudioDecoder`. Each adapter translates its underlying parser or synthesizer to `AudioPcmData` and descriptive metadata. The tracker adapter retains libopenmpt and its Kotlin fallback; MPEG Layer II still uses JLayer, and ALAC uses the existing bundled Java implementation. No third-party codec types occur in the common contracts. Existing decoder implementation entry points remain available for compatibility and fixture checks; hosts should use the common interface.
+`audio-api` contains contracts, models and existing playlist/CUE/CDDB parsing. `audio-core` is a JVM library containing portable implementations and `AudioFileProcessor`; it has no dependency on an Android SDK, Activity, player service, storage runtime, output device or Cast service. `audio-processing` is the Android composition and native tracker packaging module. It depends on the core, and registers Android's extractor/codec adapter inside the library.
 
-`AudioDecoderRegistry` accepts an ordered list of adapters and implements `AudioProcessor`. This permits future MIDI, tracker, VGM and other composite-audio implementations behind the same interface. The default composition retains the original dispatch order, extension and magic rules, synthesis settings, render duration caps, SFZ sample lookup, and fallback after null or failed decodes. The existing support hint and extension list are preserved, including playlist hints; a support hint does not guarantee a successful PCM decode.
+## Input and stream contracts
 
-The result includes the selected adapter name and source-format description. Per-request `AudioDecodeObserver` events provide successful decode, parser warnings, and exhausted fallback. The viewer's existing `UniversalAudioDecoder` is now a thin adapter from these events to `AudioPlaybackDiagnostics`, preserving existing engine labels and the `reportDiagnostics = false` preload behavior. The reusable library has no global playback report.
+`AudioInput` is reopenable and creates independent closeable `AudioBytes` random-access handles. Codecs own the handles they open. `FileAudioInput` and `MemoryAudioInput` are JVM conveniences; the host retains staging/cache leases until their streams or preparations finish.
 
-## Sources, processing and lifetimes
+`PcmDecoder` opens a `PcmStream` with format metadata. Reads return complete interleaved frames, left-aligned in signed 32-bit integer samples; the format records sample precision. EOF is -1. An all-zero block is valid audio. Backend objects and platform media handles do not cross the contract.
 
-`AudioDecodeRequest` preserves the existing buffered decode path. Its optional file is borrowed for ALAC random access and SFZ relative sample lookup. The caller retains the staging lease until decoding finishes. This increment does not impose buffered decoding on ordinary MediaPlayer playback or change memory limits. Incremental rendering/seekable composite sessions can be added later; the existing buffered synthesizers have not been replaced with purported streaming implementations.
+`AudioFileProcessor` selects codecs with explicit `PLATFORM_FIRST`, `PORTABLE_FIRST` or `PORTABLE_ONLY` policy. Existing specialized/composite formats keep their previous rendering priority. Standard formats can use either Android decoding or a portable implementation. A streaming open can fail during consumption and callers must close it; it cannot silently switch codecs after samples have already reached an output device.
 
-Format detection accepts header bytes without decoding a track. `AudioMetadataReader` borrows a local file, file descriptor or seekable byte source and releases its Android decoder before returning. The host closes descriptors, provider handles and staging leases. The content-URI fallback is an explicit Android edge adapter. Metadata results include encoded artwork; bitmap decoding, resizing and folder-artwork lookup stay in the viewer.
+Prepared-file decoding can recover from a later codec error: it closes the failed decoder, discards partial PCM and restarts another codec at source position zero. The destination is a host-owned staging file and must differ from the source. Cancellation closes handles and discards partial output. Successful preparation reports the selected decoder, exact PCM duration and streaming health metrics.
 
-`AudioProcessing.createAnalyzer` returns an `AudioAnalysisSession`. It decodes PCM blocks around a playhead supplied by the host. It owns no output device and does not load a complete track into memory. Cancellation, sample callbacks and failure callbacks retain the previous analyzer behavior. The viewer connects failures to the existing diagnostic log and measurements to its visualizer views.
+## Portable codecs
 
-Signal health calculations now live in `AudioPcmHealth`; their metrics and thresholds are unchanged. Silent PCM remains a successful decode. Output completion continues to come from the existing player/decoder completion paths.
+MP3/Layer II synthesis is translated from JLayer. Our Xing/Info/LAME reader supplies musical frame counts and encoder/synthesis delay trimming where metadata is available. AAC uses our ADTS and ISO-BMFF box/sample-table readers with JAAD synthesis. Supported edit lists trim AAC delay and padding; encrypted tracks and complex edits are rejected so another backend can handle them. FLAC's parser validates frame/header CRCs and reconstructs constant, verbatim, fixed and LPC subframes, Rice/escape residuals, wasted bits and stereo decorrelation. High-resolution FLAC is retained through 32-bit samples. WAVE PCM/float input is read in blocks.
 
-CDDB record parsing is also shared; local sidecar discovery, online lookup and its cache remain host-owned.
+The old `AudioProcessor.decode` returns an in-memory 16-bit `AudioPcmData` compatibility result. It uses the same backend selection inside the Android composition, including platform fallback. Streaming and prepared-file APIs preserve higher precision and do not allocate a whole track's PCM in memory. Existing MIDI/tracker/soundbank/chiptune renderers retain their buffered synthesis behavior and caps through a compatibility adapter.
 
-Both previous playlist parser packages now use the same unchanged implementation in `audio-api`. `com.infinifolder.playlist.PlaylistParser` remains a compatibility facade for storage and viewer callers. Playlist resolution, recursive expansion, CUE byte ranges, ordering, queue state and cache ownership remain with their existing hosts.
+## Android and player integration
 
-## Native packaging and validation
+`AndroidPcmDecoder` owns MediaExtractor, MediaDataSource and MediaCodec. It translates Android PCM encodings, releases the decoder on failure/close, and applies encoder delay/padding once to the resulting samples. If a platform codec reduces FLAC source precision, preparation can fall back to the portable decoder. Android metadata and position-following analysis remain separate library adapters.
 
-The existing Termux `buildOpenMptNative` task, JNI source, load names, dependent `.so` files and native test library path now belong to `audio-processing`. Consumer rules preserve the JNI class/method linkage during minification. This extraction does not add a new native build path: outside the existing Termux configuration, the prior optional-native/Kotlin-fallback behavior remains.
+InfiniFolder retains player service state, source staging and leases, output routing, focus, speed, seeking, repeat/shuffle, CUE source ranges, queue/preload/handoff, visualization presentation and Cast. Its main and preload paths now call the library to prepare PCM; MediaPlayer is given only that canonical PCM file. Duration discovery uses the library, without constructing a player to parse the source. The diagnostic facade connects per-request preparation/decode events to the existing playback report; preloading suppresses those events.
 
-The original audio fixture and viewer integration tests remain in `viewer-audio`. Independent signal-analysis tests moved with their implementation; registry contract tests cover failed-codec fallback, successful silence, diagnostics and unsupported input. Device acceptance still needs local/network gapless transitions, CUE boundaries, seeking, interruption and Cast; JVM checks and APK builds cannot establish those runtime behaviors.
+The current output path prepares a complete PCM WAVE file before playback to retain MediaPlayer's existing linked gapless players. Processing is bounded in memory, but output staging consumes disk and may increase startup/preload time. RIFF output over 4 GiB is rejected explicitly. A future host can connect `PcmStream` to streaming output without changing codec interfaces. Device gapless/interruption/route checks remain necessary; source and format tests alone cannot validate hardware playback.
 
-Validation on 2026-10-30 in the existing Termux environment:
+## Portability
 
-- Built `:audio-api:assembleDebug` and `:audio-processing:assembleDebug` as separate AARs.
-- Built `:app:assembleDebug` and `:viewer-host:assembleDebug -Pviewer=audio` offline.
-- Passed 53 selected JVM checks: 7 processing/analysis contracts, 42 viewer/decoder/playlist/queue/Cast/CDDB checks, and 4 storage playlist-directory checks. The report-generating playback diagnostic fixture was not run; its historical report is unchanged.
-- Confirmed the processing AAR and both APKs contain the same seven expected ARM64 tracker JNI/dependency libraries. The API AAR contains no native libraries.
-- Confirmed neither audio library references viewer or storage-runtime classes; `git diff --check` passed.
+The portable API/core build and tests exclude the Android module with `-PportableOnly=true`. Linux, Windows and macOS JVM hosts can use that core and provide their own output. Native iOS/macOS integration requires common/native contracts, native codec adapters and toolchain-specific packaging; this increment does not claim those binaries exist. See the [portability roadmap](portability-roadmap.md).
 
-These checks do not constitute device playback verification. Existing compiler deprecation and Termux AAPT2 diagnostics were emitted; both builds completed successfully.
+## Native ownership and notices
+
+Tracker JNI sources/build task/load names remain in `audio-processing`; the bridge's JVM class moves with the portable core and retains its JNI class name. Android consumer rules preserve the linkage. Existing Termux packaging and Kotlin fallback remain. See [codec implementations and notices](third-party.md).
