@@ -3,22 +3,16 @@ package com.infinifolder.audio.stream
 import com.infinifolder.audio.*
 import java.io.File
 import java.io.InputStream
-import java.io.RandomAccessFile
 import java.io.InterruptedIOException
 
 class FileAudioInput(val file: File, override val name: String = file.name) : AudioInput {
     override fun open(): AudioBytes {
-        val handle = RandomAccessFile(file, "r")
-        return object : AudioBytes {
-            override val size: Long get() = handle.length()
-            @Synchronized override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int {
-                require(position >= 0 && offset >= 0 && length >= 0 && offset <= buffer.size - length)
+        val handle = StreamAudioInput(io.github.gretchycat.infinistream.FileSourceResource(file), name).open()
+        return object : AudioBytes by handle {
+            override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int {
                 checkDecodeCancellation()
-                if (length == 0) return 0
-                handle.seek(position)
-                return handle.read(buffer, offset, length)
+                return handle.readAt(position, buffer, offset, length)
             }
-            override fun close() = handle.close()
         }
     }
 }

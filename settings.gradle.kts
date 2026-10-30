@@ -14,3 +14,9 @@ dependencyResolutionManagement {
 rootProject.name = "libinfinisound"
 include(":audio-api", ":audio-core")
 if (!providers.gradleProperty("portableOnly").isPresent) include(":audio-processing")
+
+// A standalone source build uses the sibling pinned by the consuming workspace.
+val streamRoot = providers.gradleProperty("infiniLibrariesDir").orNull?.let { file(it).resolve("libinfinistream") }
+    ?: file("../libinfinistream")
+check(streamRoot.resolve("settings.gradle.kts").isFile) { "Clone libinfinistream beside libinfinisound, or set -PinfiniLibrariesDir" }
+includeBuild(streamRoot)
