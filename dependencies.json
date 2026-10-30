@@ -1,0 +1,6 @@
+{
+  "libinfinistream": {
+    "url": "https://github.com/gretchycat/libinfinistream.git",
+    "commit": "1b688937df72e37b4e5ea7909794abbef3e168b0"
+  }
+}

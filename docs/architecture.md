@@ -1,5 +1,9 @@
 # Parsing, decoding and output boundaries
 
+## Shared stream architecture
+
+libinfinistream is the platform-neutral transport/metadata foundation for the library family. StreamAudioInput adapts its known-length positional SourceResources, PcmStreamHandle exposes actual typed PCM metadata, and AudioStreamProcessor declares encoded/PCM ports and pull ownership. FileAudioInput uses the shared positional implementation while retaining legacy file hints. Store opens resources; Vault is used only for containers; Sound consumes their sources without depending on either implementation or the application. Existing AudioInput/PcmStream APIs remain available during migration. JVM contracts do not imply native iOS binaries.
+
 Updated 2026-10-30 for the portable codec and Android adapter increment.
 
 ```mermaid
