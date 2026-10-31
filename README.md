@@ -87,3 +87,5 @@ See [portability roadmap](docs/portability-roadmap.md), [architecture](docs/arch
 ## InfiniStream compatibility
 
 `audio-api` now depends on `libinfinistream:stream-core:0.1.0`. Clone the sibling repository at the workspace's pinned revision (foundation `1b68893`) before a standalone source build, or set `-PinfiniLibrariesDir`. `StreamAudioInput` accepts a known-length positional source without hidden spooling; `PcmStreamHandle` exposes actual typed PCM output metadata. `AudioStreamProcessor` advertises accepted/produced types and borrows encoded input while owning decoded output. Existing FileAudioInput callers retain file hints and use Stream positional I/O internally. Existing APIs, codecs and Android output behavior are preserved.
+
+PCM output metadata preserves original source provenance/warnings and adds the audio-decode step while describing actual sample format/rate/channels; uncertain liveness remains unknown. Formats requiring file-relative banks or companion resources retain the File compatibility APIs until a common related-resource resolver is supplied; the app retains those file hints and behaviors.

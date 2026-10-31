@@ -22,18 +22,30 @@ class StreamAudioInput(private val resource: SourceResource,
 }
 
 /** Typed PCM output retains exact integer sample contract; no conversion to a byte stream. */
-class PcmStreamHandle(val pcm: PcmStream, private val ownsPcm: Boolean = true) : StreamHandle {
-    override val metadata: StreamMetadata get() = StreamMetadata(
+class PcmStreamHandle(val pcm: PcmStream, private val ownsPcm: Boolean = true,
+    private val inputMetadata: StreamMetadata? = null) : StreamHandle {
+    override val metadata: StreamMetadata get() {
+        val format = pcm.format
+        return StreamMetadata(
         ContentType(DataKind.PCM_AUDIO, "audio/x-raw", "pcm-signed-left-aligned32", "signed-int32"),
-        finiteness = Finiteness.FINITE, capabilities = setOf(Capability.READ),
+        finiteness = when {
+            inputMetadata?.finiteness == Finiteness.LIVE -> Finiteness.LIVE
+            format.totalFrames != null -> Finiteness.FINITE
+            else -> inputMetadata?.finiteness ?: Finiteness.UNKNOWN
+        }, capabilities = setOf(Capability.READ),
         ownership = if (ownsPcm) Ownership.OWNED else Ownership.BORROWED,
         attributes = buildMap {
-            put("sampleRate", pcm.format.sampleRate.toString()); put("channels", pcm.format.channels.toString())
-            put("sourceBitsPerSample", pcm.format.bitsPerSample.toString())
-            pcm.format.totalFrames?.let { put("totalFrames", it.toString()) }
-            pcm.format.durationMs?.let { put("durationMs", it.toString()) }
+            put("sampleRate", format.sampleRate.toString()); put("channels", format.channels.toString())
+            put("sourceBitsPerSample", format.bitsPerSample.toString())
+            format.totalFrames?.let { put("totalFrames", it.toString()) }
+            format.durationMs?.let { put("durationMs", it.toString()) }
             pcm.decoderName?.let { put("decoder", it) }
-        })
+            pcm.sourceFormat?.let { put("sourceFormat", it) }
+            inputMetadata?.name?.let { put("sourceName", it) }
+        }, provenance = (inputMetadata?.provenance ?: Provenance()).let { origin ->
+            origin.copy(transformations = origin.transformations + "audio.decode")
+        }, warnings = inputMetadata?.warnings.orEmpty())
+    }
     private var closed = false
     fun read(samples: IntArray, offset: Int = 0, length: Int = samples.size - offset): Int {
         if (closed) throw IOException("PCM handle is closed")

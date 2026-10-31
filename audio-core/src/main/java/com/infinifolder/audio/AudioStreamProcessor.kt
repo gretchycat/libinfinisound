@@ -32,7 +32,7 @@ class AudioStreamProcessor(
                 override fun close() {}
             }
         }
-        val pcm = PcmStreamHandle(decode(StreamAudioInput(resource)))
+        val pcm = PcmStreamHandle(decode(StreamAudioInput(resource)), inputMetadata = handle.metadata)
         return object : ProcessorSession {
             override val outputs = mapOf("pcm" to listOf<StreamHandle>(pcm))
             override fun close() = pcm.close()

@@ -15,6 +15,8 @@ class StreamAudioAdaptersTest {
                     val pcm = session.outputs.getValue("pcm").single() as PcmStreamHandle
                     assertEquals(DataKind.PCM_AUDIO, pcm.metadata.content.kind)
                     assertEquals("44100", pcm.metadata.attributes["sampleRate"])
+                    assertEquals(source.metadata.provenance.source, pcm.metadata.provenance.source)
+                    assertTrue("audio.decode" in pcm.metadata.provenance.transformations)
                     assertFalse(Capability.POSITIONAL_READ in pcm.metadata.capabilities)
                     val samples = IntArray(8192); var count = 0L
                     while (true) { val n = pcm.read(samples); if (n < 0) break; count += n }
