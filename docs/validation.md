@@ -146,3 +146,14 @@ warnings. Native timing inspection covers legacy containers as well as the extra
 codecs. The consumer also corrects malformed generated game-music fixtures.
 Compilation and handset results are recorded by the consumer; no new automated
 tests or full regression run are implied by these source corrections.
+
+## Portable timing and archive consumer correction (checkpoint 27)
+
+Owner feedback identifies CDDA, DFF, MLP, SF2 and THD as still missing timing.
+Portable inspection now handles those existing decoding/audition policies without
+PCM rendering. Optional appended NSF `time`/`fade` metadata supplies real endpoints;
+the consumer chord fixture now supplies 1.5 seconds and zero fade. The consumer
+also corrects archive URI identity and playlist-relative path resolution, retains
+known queue metadata and uses decoded timing during gapless promotion. Builds and
+remaining handset acceptance are recorded by the consumer. No automated test run
+or new audible verification is implied.

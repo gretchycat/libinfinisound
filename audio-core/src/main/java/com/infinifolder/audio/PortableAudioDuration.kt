@@ -10,6 +10,9 @@ object PortableAudioDuration {
     fun read(input: AudioInput): Long? {
         val probe = input.probe()
         if (MidiSequencer.isMidi(probe.bytes)) return MidiTimeline.read(input).durationMs
+        try { EncodedAudioDuration.read(input,probe)?.let { return it } }
+        catch (cancel: java.io.InterruptedIOException) { throw cancel }
+        catch (_: java.io.IOException) { }
         for (decoder in StandardAudioDecoders.decoders) {
             if (decoder.matches(input,probe)) {
                 try { decoder.open(input).use { it.format.durationMs?.let { ms -> return ms } } }

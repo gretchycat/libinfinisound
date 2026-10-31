@@ -187,6 +187,14 @@ Duration fallback also inspects native container/stream timing for portable lega
 formats, including those Android cannot inspect. It does not render a full song
 to populate playlist metadata.
 
+Portable timing also covers raw CDDA byte counts, the supported stereo DSD64
+DSDIFF layout, and MLP/TrueHD access-unit headers. SoundFont-bank auditions share
+one explicit 2.5-second preview policy between rendering and metadata. Optional
+NSFe `time`/`fade` chunks appended to NSF programs are parsed in the core and
+used for both metadata and playback endpoints; this does not implement NSF2's
+additional CPU/IRQ features. Truly untimed files retain the declared cap.
+Platform metadata and fallback inspection have separate bounded read budgets.
+
 The optional FluidLite/GME symbols are resolved at runtime and fail explicitly
 when absent from a replacement AAR. Portable-only policy excludes these native
 backends. Desktop/iOS packaging is still separate work.

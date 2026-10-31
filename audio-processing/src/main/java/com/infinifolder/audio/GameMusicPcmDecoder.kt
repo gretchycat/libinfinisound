@@ -38,16 +38,19 @@ internal object GameMusicPcmDecoder : PcmDecoder {
         }
     /** An untimed loop's playback cap is not file metadata. Never publish it as a measured length. */
     fun inspectDuration(input: AudioInput): Long? {
-        val handle = GameMusicNative.open(readData(input), true)
+        val data = readData(input)
+        com.infinifolder.audio.chiptune.NsfTrackTiming.read(data)?.let { return it.durationMs }
+        val handle = GameMusicNative.open(data, true)
         return try { GameMusicNative.metadataDuration(handle).toLong().takeIf { it > 0 } }
         finally { GameMusicNative.close(handle) }
     }
     override fun open(input: AudioInput): PcmStream {
         val data = readData(input)
+        val timing = com.infinifolder.audio.chiptune.NsfTrackTiming.read(data)
         return object : PcmStream {
             private var handle = GameMusicNative.open(data, false)
-            override val format = PcmFormat(44100,2,GameMusicNative.duration(handle)*44100L/1000)
-            private val fadeFrames = GameMusicNative.fadeDuration(handle)*44100L/1000
+            override val format = PcmFormat(44100,2,(timing?.durationMs ?: GameMusicNative.duration(handle).toLong())*44100/1000)
+            private val fadeFrames = (timing?.fadeMs ?: GameMusicNative.fadeDuration(handle))*44100L/1000
             override val decoderName = name
             override val sourceFormat = "game-music"
             private var frame = 0L

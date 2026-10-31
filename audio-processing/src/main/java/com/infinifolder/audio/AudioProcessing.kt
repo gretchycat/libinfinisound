@@ -99,7 +99,7 @@ object AudioProcessing : AudioProcessor {
     fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean = false): AudioTags {
         val delegate = StreamAudioInput(source)
         val caller = Thread.currentThread()
-        val deadline = System.nanoTime() + 3_000_000_000L
+        var deadline = System.nanoTime() + 3_000_000_000L
         val input = object : AudioInput {
             override val name = delegate.name
             override fun open(): AudioBytes {
@@ -123,6 +123,9 @@ object AudioProcessing : AudioProcessor {
             metadata.readTags(AudioMetadataSource.Seekable(bytes.size, bytes::readAt), includeArtwork)
         } }.getOrElse { AudioTags(null,null,null,null) }
         if ((tags.duration?.toLongOrNull() ?: 0) > 0) return tags
+        // A failed platform probe must not consume the portable/native fallback's
+        // complete read budget. Each stage remains bounded independently.
+        deadline = System.nanoTime() + 3_000_000_000L
         val duration = try { inspectDuration(input) }
             catch (cancel: java.io.InterruptedIOException) { throw cancel }
             catch (_: Exception) { null }

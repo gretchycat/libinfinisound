@@ -116,7 +116,7 @@ internal object BuiltInAudioDecoders {
                     synth.noteOn(0, 60, 100)
                     synth.noteOn(0, 64, 100)
                     synth.noteOn(0, 67, 100)
-                    synth.renderToPcm(2500L)
+                    synth.renderToPcm(com.infinifolder.audio.InstrumentPreview.DURATION_MS)
                 }
             }
         ),
@@ -131,7 +131,7 @@ internal object BuiltInAudioDecoders {
                 synth.noteOn(0, 60, 100)
                 synth.noteOn(0, 64, 100)
                 synth.noteOn(0, 67, 100)
-                synth.renderToPcm(2500L)
+                synth.renderToPcm(com.infinifolder.audio.InstrumentPreview.DURATION_MS)
             }
         ),
         DecoderAdapter(
@@ -142,7 +142,7 @@ internal object BuiltInAudioDecoders {
                     val synth = WavetableSynthesizer(44100)
                     synth.soundFont = bank
                     synth.noteOn(0, 60, 100)
-                    synth.renderToPcm(2500L)
+                    synth.renderToPcm(com.infinifolder.audio.InstrumentPreview.DURATION_MS)
                 }
             }
         ),
