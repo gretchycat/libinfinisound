@@ -35,7 +35,7 @@ Prepared-file decoding can recover from a later codec error: it closes the faile
 
 MP3/Layer II synthesis is translated from JLayer. Our Xing/Info/LAME reader supplies musical frame counts and encoder/synthesis delay trimming where metadata is available. AAC uses our ADTS and ISO-BMFF box/sample-table readers with JAAD synthesis. Supported edit lists trim AAC delay and padding; encrypted tracks and complex edits are rejected so another backend can handle them. FLAC's parser validates frame/header CRCs and reconstructs constant, verbatim, fixed and LPC subframes, Rice/escape residuals, wasted bits and stereo decorrelation. High-resolution FLAC is retained through 32-bit samples. WAVE PCM/float input is read in blocks.
 
-The old `AudioProcessor.decode` returns an in-memory 16-bit `AudioPcmData` compatibility result. It uses the same backend selection inside the Android composition, including platform fallback. Streaming and prepared-file APIs preserve higher precision and do not allocate a whole track's PCM in memory. Existing MIDI/tracker/soundbank/chiptune renderers retain their buffered synthesis behavior and caps through a compatibility adapter.
+The old `AudioProcessor.decode` returns an in-memory 16-bit `AudioPcmData` compatibility result. It uses the same backend selection inside the Android composition, including platform fallback. Streaming and prepared-file APIs preserve higher precision and do not allocate a whole track's PCM in memory. Existing MIDI/tracker/soundbank renderers retain their buffered synthesis behavior and caps through a compatibility adapter.
 
 ## Android and player integration
 
@@ -64,3 +64,13 @@ The Android composition exposes `openPlaybackSource(SourceResource, scratch, obs
 Portable FLAC supports exact output-frame seeking using coded sample/frame numbers, CRC-validated frame resynchronization, the following frame's sample-number link, a binary byte search and at most 4096 retained anchors. Fixed and variable block streams work without a seek table. Seeking decodes candidate/target frames rather than the complete PCM prefix. Subframe reconstruction is retained. Android's raw extractor output is never relabeled as wider PCM by modifying a format hint; reduced precision selects the portable fallback. Wider codec containers normalize to the FLAC source's canonical 16/24/32-bit output width, retaining all source bits and a stable fallback format.
 
 Direct positional input removes mandatory encoded-file staging where supported. It does not promise constant network latency: a cold exact MPEG seek still scans intervening encoded packet headers; FLAC uses coded sample positions. Provider timeouts and live remote acceptance remain host/backend concerns. PCM cache memory stays bounded, disk caches can grow to a complete track, and the RIFF size limit remains.
+
+## Decode failures never substitute audio
+
+Unsupported WMA, chiptune, telephony and advanced-audio stubs no longer generate
+a fixed chord. DSD and ADX retain their existing sample conversion; actual
+registered platform codecs remain available. Unimplemented chiptune emulation
+reports unsupported. SFZ requires readable, decodable referenced WAV samples and
+uses their actual rate/channels; sampleless GUS patches fail. MIDI note synthesis
+and previews of valid sample banks remain input-driven. No decoder fallback may
+replace failed input with a test signal.

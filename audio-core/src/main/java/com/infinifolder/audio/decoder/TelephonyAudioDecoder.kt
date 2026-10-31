@@ -1,7 +1,6 @@
 package com.infinifolder.audio.decoder
 
 import com.infinifolder.audio.model.AudioPcmData
-import com.infinifolder.audio.synth.SoundFontReader
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.cos
@@ -10,40 +9,12 @@ import kotlin.math.sqrt
 
 object TelephonyAudioDecoder {
 
-    fun canDecode(bytes: ByteArray, extension: String? = null): Boolean {
-        val ext = extension?.lowercase() ?: ""
-        if (ext == "adx" || ext == "amr" || ext == "awb" || ext == "g722" || ext == "gsm") return true
-        if (bytes.size < 16) return false
-        // ADX
-        if ((bytes[0].toInt() and 0xFF) == 0x80 && (bytes[1].toInt() and 0xFF) == 0x00) return true
-        // AMR
-        if (bytes.size >= 6 && String(bytes, 0, 6, Charsets.US_ASCII) == "#!AMR\n") return true
-        // AWB
-        if (bytes.size >= 9 && String(bytes, 0, 9, Charsets.US_ASCII) == "#!AMR-WB\n") return true
-        // GSM 06.10: 33-byte frames starting with 0xD0..0xDF
-        if (bytes.size >= 33 && (bytes[0].toInt() and 0xF0) == 0xD0 && (bytes.size < 66 || (bytes[33].toInt() and 0xF0) == 0xD0)) return true
-        return false
-    }
+    // AMR/GSM/G.722 are left to registered codecs; there is no substitute tone.
+    fun canDecode(bytes: ByteArray, extension: String? = null): Boolean =
+        bytes.size >= 36 && (bytes[0].toInt() and 0xFF) == 0x80 && bytes[1] == 0.toByte()
 
-    fun decode(bytes: ByteArray, extension: String? = null): AudioPcmData? {
-        val ext = extension?.lowercase() ?: ""
-        if ((bytes.size >= 4 && (bytes[0].toInt() and 0xFF) == 0x80 && (bytes[1].toInt() and 0xFF) == 0x00) || ext == "adx") {
-            return decodeAdx(bytes)
-        }
-        if (bytes.size >= 6 && String(bytes, 0, 6, Charsets.US_ASCII) == "#!AMR\n" || ext == "amr") {
-            return decodeAmr(bytes, isWideBand = false)
-        }
-        if (bytes.size >= 9 && String(bytes, 0, 9, Charsets.US_ASCII) == "#!AMR-WB\n" || ext == "awb") {
-            return decodeAmr(bytes, isWideBand = true)
-        }
-        if (ext == "g722") {
-            return decodeG722(bytes)
-        }
-        if (ext == "gsm" || (bytes.size >= 33 && (bytes[0].toInt() and 0xF0) == 0xD0)) {
-            return decodeGsm(bytes)
-        }
-        return null
-    }
+    fun decode(bytes: ByteArray, extension: String? = null): AudioPcmData? =
+        if (canDecode(bytes, extension)) decodeAdx(bytes) else null
 
     private fun decodeAdx(bytes: ByteArray): AudioPcmData? {
         if (bytes.size < 36) return null
@@ -108,76 +79,4 @@ object TelephonyAudioDecoder {
         return AudioPcmData(sr, channels, outSamples, 16)
     }
 
-    private fun decodeAmr(bytes: ByteArray, isWideBand: Boolean): AudioPcmData? {
-        val sampleRate = if (isWideBand) 16000 else 8000
-        val channels = 1
-        val headerLen = if (isWideBand) 9 else 6
-        var pos = headerLen
-        var frameCount = 0
-
-        while (pos < bytes.size) {
-            val toc = bytes[pos++].toInt() and 0xFF
-            val mode = (toc shr 3) and 0x0F
-            val frameSize = if (isWideBand) amrWbFrameSize(mode) else amrNbFrameSize(mode)
-            pos += (frameSize - 1).coerceAtMost(bytes.size - pos)
-            frameCount++
-        }
-
-        val durationSec = (frameCount * 0.02).coerceIn(0.5, 30.0)
-        val chord = synthesizePolyphonicChord(sampleRate, durationSec)
-        return AudioPcmData(sampleRate, channels, chord, 16)
-    }
-
-    private fun decodeG722(bytes: ByteArray): AudioPcmData {
-        // G.722 wideband telephony: 16000 Hz, 64 kbps (1 byte = 2 sub-band ADPCM samples / 1 audio frame)
-        val sampleRate = 16000
-        val channels = 1
-        val durationSec = (bytes.size.toDouble() / 8000.0).coerceIn(0.5, 30.0)
-        val chord = synthesizePolyphonicChord(sampleRate, durationSec)
-        return AudioPcmData(sampleRate, channels, chord, 16)
-    }
-
-    private fun decodeGsm(bytes: ByteArray): AudioPcmData {
-        // GSM 06.10 full-rate telephony: 8000 Hz, 33-byte frames (1 frame = 160 samples = 20ms)
-        val sampleRate = 8000
-        val channels = 1
-        val frameCount = (bytes.size / 33).coerceAtLeast(1)
-        val durationSec = (frameCount * 0.02).coerceIn(0.5, 30.0)
-        val chord = synthesizePolyphonicChord(sampleRate, durationSec)
-        return AudioPcmData(sampleRate, channels, chord, 16)
-    }
-
-    private fun synthesizePolyphonicChord(sampleRate: Int, durationSec: Double): ShortArray {
-        val totalSamples = (sampleRate * durationSec).toInt()
-        val outSamples = ShortArray(totalSamples)
-
-        val chordFreqs = doubleArrayOf(261.6256, 329.6276, 391.9954, 523.2511)
-        for (i in 0 until totalSamples) {
-            val t = i.toDouble() / sampleRate
-            val decay = Math.exp(-2.2 * t)
-            val attack = (t / 0.008).coerceAtMost(1.0)
-            val env = attack * decay
-
-            var sum = 0.0
-            for (f in chordFreqs) {
-                val phase = 2.0 * Math.PI * f * t
-                val tone = Math.sin(phase) + 0.4 * Math.sin(2.0 * phase) + 0.2 * Math.sin(3.0 * phase) + 0.1 * Math.sin(4.0 * phase)
-                sum += tone * 0.25
-            }
-
-            val sampleVal = (sum * env * 24000.0).toInt().coerceIn(-32768, 32767)
-            outSamples[i] = sampleVal.toShort()
-        }
-        return outSamples
-    }
-
-    private fun amrNbFrameSize(mode: Int): Int = when (mode) {
-        0 -> 13; 1 -> 14; 2 -> 16; 3 -> 18; 4 -> 20; 5 -> 21; 6 -> 27; 7 -> 32
-        else -> 1
-    }
-
-    private fun amrWbFrameSize(mode: Int): Int = when (mode) {
-        0 -> 18; 1 -> 24; 2 -> 33; 3 -> 37; 4 -> 41; 5 -> 47; 6 -> 51; 7 -> 59; 8 -> 61
-        else -> 1
-    }
 }

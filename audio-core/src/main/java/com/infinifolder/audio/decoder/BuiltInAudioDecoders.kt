@@ -1,6 +1,5 @@
 package com.infinifolder.audio.decoder
 
-import com.infinifolder.audio.chiptune.ChiptunePlayer
 import com.infinifolder.audio.AudioDecoder
 import com.infinifolder.audio.AudioDecodeRequest
 import com.infinifolder.audio.AudioProbe
@@ -29,9 +28,7 @@ internal object BuiltInAudioDecoders {
                 SoundFontReader.isSoundFont(bytes) ||
                 SoundFontReader.isGusPatch(bytes) ||
                 TrackerEngine.canDecode(bytes) ||
-                ChiptunePlayer.canDecode(bytes) ||
                 AudiophileStreamDecoder.canDecode(bytes, ext) ||
-                WmaDecoder.canDecode(bytes, ext) ||
                 AlacAndMpeg2Decoder.canDecode(bytes, ext) ||
                 CddaDecoder.canDecode(bytes, ext)
     }
@@ -97,7 +94,7 @@ internal object BuiltInAudioDecoders {
         ),
         DecoderAdapter(
             name = "TelephonyAudioDecoder",
-            accepts = { bytes, ext -> ext in setOf("adx", "amr", "awb", "g722", "gsm") || TelephonyAudioDecoder.canDecode(bytes, ext) },
+            accepts = { bytes, ext -> TelephonyAudioDecoder.canDecode(bytes, ext) },
             render = { bytes, ext, file ->
                 TelephonyAudioDecoder.decode(bytes, ext)
             }
@@ -157,15 +154,8 @@ internal object BuiltInAudioDecoders {
             }
         ),
         DecoderAdapter(
-            name = "ChiptunePlayer",
-            accepts = { bytes, ext -> ext in setOf("dro", "imf", "vgm", "vgz", "ym", "nsf", "spc", "sid") || ChiptunePlayer.canDecode(bytes) },
-            render = { bytes, ext, file ->
-                ChiptunePlayer.renderToPcm(bytes)
-            }
-        ),
-        DecoderAdapter(
             name = "AudiophileStreamDecoder",
-            accepts = { bytes, ext -> ext in setOf("dsf", "dff", "tta", "wv", "ra", "ac3", "eac3", "mlp", "thd") || AudiophileStreamDecoder.canDecode(bytes, ext) },
+            accepts = { bytes, ext -> AudiophileStreamDecoder.canDecode(bytes, ext) },
             render = { bytes, ext, file ->
                 AudiophileStreamDecoder.decode(bytes, ext)
             },
@@ -174,13 +164,6 @@ internal object BuiltInAudioDecoders {
                 "dsf" -> "DSD64 (2.8 MHz 1-bit) → 44.1 kHz • Stereo • Sony DSF"
                 else -> null
             } }
-        ),
-        DecoderAdapter(
-            name = "WmaDecoder",
-            accepts = { bytes, ext -> ext == "wma" || WmaDecoder.canDecode(bytes, ext) },
-            render = { bytes, ext, file ->
-                WmaDecoder.decode(bytes)
-            }
         ),
         DecoderAdapter(
             name = "AlacAndMpeg2Decoder",
@@ -270,9 +253,9 @@ internal object BuiltInAudioDecoders {
     val SUPPORTED_EXTENSIONS = setOf(
         "au", "snd", "aiff", "aif", "aifc", "voc", "8svx", "svx", "16sv", "maud",
         "w64", "rf64", "caf", "avr", "ircam", "sph", "pvf", "wve", "htk",
-        "adx", "amr", "awb", "g722", "gsm", "wma", "mp2", "alac", "mid", "midi", "kar", "rmi", "sf2", "sfz", "pat",
-        "mod", "s3m", "xm", "it", "dro", "imf", "vgm", "vgz", "ym", "nsf", "spc", "sid",
-        "dsf", "dff", "tta", "wv", "ra", "ac3", "eac3", "mlp", "thd",
+        "adx", "mp2", "alac", "mid", "midi", "kar", "rmi", "sf2", "sfz", "pat",
+        "mod", "s3m", "xm", "it",
+        "dsf", "dff",
         "m3u", "m3u8", "pls", "xspf", "cue"
     )
 }

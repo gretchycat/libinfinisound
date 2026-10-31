@@ -6,55 +6,15 @@ import java.nio.ByteOrder
 
 object AudiophileStreamDecoder {
 
-    fun canDecode(bytes: ByteArray, extension: String? = null): Boolean {
-        val ext = extension?.lowercase() ?: ""
-        if (ext in setOf("dsf", "dff", "wv", "tta", "ra", "ac3", "eac3", "mlp", "thd")) return true
-        if (bytes.size < 16) return false
-        // DSF
-        if (bytes.size >= 4 && String(bytes, 0, 4, Charsets.US_ASCII) == "DSD ") return true
-        // DFF
-        if (bytes.size >= 16 && String(bytes, 0, 4, Charsets.US_ASCII) == "FRM8" &&
-            String(bytes, 12, 4, Charsets.US_ASCII) == "DSD ") return true
-        // WavPack
-        if (bytes.size >= 4 && String(bytes, 0, 4, Charsets.US_ASCII) == "wvpk") return true
-        // TTA
-        if (bytes.size >= 4 && String(bytes, 0, 4, Charsets.US_ASCII) == "TTA1") return true
-        // RealMedia
-        if (bytes.size >= 4 && String(bytes, 0, 4, Charsets.US_ASCII) == ".RMF") return true
-        // AC-3 / E-AC-3
-        val b0 = bytes[0].toInt() and 0xFF
-        val b1 = bytes[1].toInt() and 0xFF
-        if (b0 == 0x0B && b1 == 0x77) return true
-        // MLP / TrueHD
-        if (bytes.size >= 8) {
-            val s0 = bytes[0].toInt() and 0xFF
-            val s1 = bytes[1].toInt() and 0xFF
-            val s2 = bytes[2].toInt() and 0xFF
-            val s3 = bytes[3].toInt() and 0xFF
-            val s4 = bytes[4].toInt() and 0xFF
-            val s5 = bytes[5].toInt() and 0xFF
-            val s6 = bytes[6].toInt() and 0xFF
-            val s7 = bytes[7].toInt() and 0xFF
-            if (s0 == 0x10 && s1 == 0x50 && s2 == 0xFF && s3 == 0xD8) return true
-            if (s4 == 0xF8 && s5 == 0x72 && s6 == 0x6F && (s7 == 0xBA || s7 == 0xBB)) return true
-        }
+    // Only the existing DSD sample conversion is implemented here. Other codecs
+    // must be decoded by a real registered backend, never synthesized stand-ins.
+    fun canDecode(bytes: ByteArray, extension: String? = null): Boolean =
+        (bytes.size >= 4 && String(bytes, 0, 4, Charsets.US_ASCII) == "DSD ") ||
+            (bytes.size >= 16 && String(bytes, 0, 4, Charsets.US_ASCII) == "FRM8" &&
+                String(bytes, 12, 4, Charsets.US_ASCII) == "DSD ")
 
-        return false
-    }
-
-    fun decode(bytes: ByteArray, extension: String? = null): AudioPcmData? {
-        if (!canDecode(bytes, extension)) return null
-
-        // 1. DSD formats (DSF & DFF)
-        if (String(bytes, 0, 4, Charsets.US_ASCII) == "DSD " ||
-            (bytes.size >= 16 && String(bytes, 0, 4, Charsets.US_ASCII) == "FRM8")) {
-            return decodeDsd(bytes)
-        }
-
-        // 2. High-fidelity polyphonic stereo reproduction for audiophile and cinema formats:
-        // TTA, WavPack, RealAudio, AC-3, E-AC-3, MLP, TrueHD
-        return synthesizePolyphonicChord(44100, 1.5)
-    }
+    fun decode(bytes: ByteArray, extension: String? = null): AudioPcmData? =
+        if (canDecode(bytes, extension)) decodeDsd(bytes) else null
 
     private val DSD_FILTER: FloatArray = run {
         val n = 64
@@ -216,39 +176,4 @@ object AudiophileStreamDecoder {
         return AudioPcmData(sampleRate, channels, outStereo, 16)
     }
 
-    fun synthesizePolyphonicChord(sampleRate: Int = 44100, durationSec: Double = 1.5): AudioPcmData {
-        val totalFrames = (sampleRate * durationSec).toInt()
-        val outStereo = ShortArray(totalFrames * 2)
-
-        // C Major Piano Chord: C4 (261.63), E4 (329.63), G4 (392.00), C5 (523.25)
-        val chordNotes = listOf(
-            Triple(261.6256, 0.65f, 0.35f), // C4 slightly left
-            Triple(329.6276, 0.55f, 0.45f), // E4 center-left
-            Triple(391.9954, 0.45f, 0.55f), // G4 center-right
-            Triple(523.2511, 0.35f, 0.65f)  // C5 slightly right
-        )
-
-        for (i in 0 until totalFrames) {
-            val t = i.toDouble() / sampleRate
-            val decay = Math.exp(-2.2 * t)
-            val attack = (t / 0.008).coerceAtMost(1.0)
-            val env = (attack * decay).toFloat()
-
-            var leftSum = 0f
-            var rightSum = 0f
-
-            for ((freq, leftGain, rightGain) in chordNotes) {
-                val phase = 2.0 * Math.PI * freq * t
-                val tone = (Math.sin(phase) + 0.4 * Math.sin(2.0 * phase) + 0.2 * Math.sin(3.0 * phase) + 0.1 * Math.sin(4.0 * phase)).toFloat()
-                val amp = tone * env * 7000f
-                leftSum += amp * leftGain
-                rightSum += amp * rightGain
-            }
-
-            outStereo[i * 2] = leftSum.toInt().coerceIn(-32768, 32767).toShort()
-            outStereo[i * 2 + 1] = rightSum.toInt().coerceIn(-32768, 32767).toShort()
-        }
-
-        return AudioPcmData(sampleRate, 2, outStereo, 16)
-    }
 }

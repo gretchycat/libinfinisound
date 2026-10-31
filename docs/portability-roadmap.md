@@ -26,6 +26,6 @@ The current core includes JVM implementations and is not an iOS binary. Move the
 
 ## Composite audio
 
-Retain and extend MIDI/tracker/VGM metadata, instrument/voice control, subsongs, sample-bank resolution and incremental rendering through library-owned interfaces. Existing buffered renderer limits are preserved in this increment. Add streaming composite sessions and richer metadata without exposing backend-specific objects to players.
+Retain and extend MIDI/tracker metadata, instrument/voice control, subsongs, sample-bank resolution and incremental rendering through library-owned interfaces. Add real VGM/chiptune emulation behind the same contracts; the former fixed-chord stubs now report unsupported. Existing buffered renderer limits are preserved in this increment. Add streaming composite sessions and richer metadata without exposing backend-specific objects to players.
 
 The current host can consume common known-length positional resources for playback and metadata, keeping explicit staging where a provider or companion-file renderer requires it. Portable FLAC now provides sample-exact positioning through 32 bits, with real Android precision checks and canonical output widths. These changes preserve the existing native linked-player mechanism; they do not implement desktop/iOS output or remove live-provider acceptance work.

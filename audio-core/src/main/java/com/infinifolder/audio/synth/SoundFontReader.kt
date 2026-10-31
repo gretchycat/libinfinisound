@@ -177,9 +177,10 @@ object SoundFontReader {
     }
 
     fun parseSfz(text: String, directory: File? = null): SoundFontBank {
+        if (!isSfz(text)) throw java.io.IOException("Invalid SFZ instrument")
         val samples = mutableListOf<SoundFontSample>()
         val regions = text.split(Regex("<region>"))
-        for (reg in regions) {
+        for (reg in regions.drop(1)) {
             val lines = reg.lines()
             var sampleFile = ""
             var keyCenter = 60
@@ -199,27 +200,24 @@ object SoundFontReader {
                 }
             }
 
-            // Load referenced WAV or synthetic waveform
-            var pcm: ShortArray? = null
-            var rate = 44100
-            if (sampleFile.isNotBlank() && directory != null) {
-                val f = File(directory, sampleFile)
-                if (f.exists()) {
-                    runCatching {
-                        val bytes = f.readBytes()
-                        if (bytes.size >= 44 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF") {
-                            val decoded = AudioPcmData.from16BitLittleEndian(bytes, 44100, 1, 44)
-                            pcm = decoded.samples
-                            rate = decoded.sampleRate
-                        }
-                    }
-                }
+            if (sampleFile.isBlank() || directory == null)
+                throw java.io.IOException("SFZ region requires a readable sample file")
+            val file = File(directory, sampleFile)
+            if (!file.isFile || !file.canRead()) throw java.io.IOException("Missing SFZ sample: $sampleFile")
+            val bytes = file.readBytes()
+            if (bytes.size < 12 || String(bytes, 0, 4, Charsets.US_ASCII) != "RIFF" ||
+                String(bytes, 8, 4, Charsets.US_ASCII) != "WAVE")
+                throw java.io.IOException("Unsupported SFZ sample: $sampleFile")
+            val decoded = com.infinifolder.audio.PortableAudioProcessing.decode(
+                com.infinifolder.audio.AudioDecodeRequest(bytes, "wav", file))?.pcm
+                ?: throw java.io.IOException("Cannot decode SFZ sample: $sampleFile")
+            val rate = decoded.sampleRate
+            val pcm = ShortArray(decoded.samples.size / decoded.channels) { frame ->
+                var sum = 0L
+                for (channel in 0 until decoded.channels) sum += decoded.samples[frame * decoded.channels + channel]
+                (sum / decoded.channels).toShort()
             }
-
-            if (pcm == null) {
-                // Synthesize basic piano-harmonic tone
-                pcm = synthesizeHarmonicTone(44100, 261.63, 1.0)
-            }
+            if (pcm.isEmpty()) throw java.io.IOException("Empty SFZ sample: $sampleFile")
 
             samples.add(
                 SoundFontSample(
@@ -234,6 +232,7 @@ object SoundFontReader {
             )
         }
 
+        if (samples.isEmpty()) throw java.io.IOException("SFZ has no supported sample regions")
         val inst = SoundFontInstrument("SFZ Instrument", program = 0, bank = 0, samples = samples)
         return SoundFontBank("SFZ SoundBank", listOf(inst))
     }
@@ -248,12 +247,7 @@ object SoundFontReader {
         if (sampleCount > 0) {
             val bb = ByteBuffer.wrap(bytes, pcmDataOffset, sampleCount * 2).order(ByteOrder.LITTLE_ENDIAN)
             for (i in 0 until sampleCount) samples[i] = bb.short
-        } else {
-            val tone = synthesizeHarmonicTone(44100, 261.63, 1.0)
-            return SoundFontBank(desc, listOf(SoundFontInstrument(desc, 0, 0, listOf(
-                SoundFontSample(desc, 44100, 60, 0, 0, tone.size, LoopMode.FORWARD, tone)
-            ))))
-        }
+        } else return null
 
         val sample = SoundFontSample(desc, 44100, 60, 0, 0, samples.size, LoopMode.FORWARD, samples)
         return SoundFontBank(desc, listOf(SoundFontInstrument(desc, 0, 0, listOf(sample))))

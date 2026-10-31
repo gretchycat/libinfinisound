@@ -25,9 +25,9 @@ object PortableAudioProcessing : AudioProcessor {
         val ext = probe.normalizedExtension
         if (ext in setOf(
             "mp2", "alac", "mod", "s3m", "xm", "it", "mid", "midi", "kar", "rmi",
-            "sf2", "sfz", "pat", "dro", "imf", "vgm", "vgz", "ym", "nsf", "spc", "sid",
-            "dsf", "dff", "tta", "wv", "ra", "ac3", "eac3", "mlp", "thd", "wma",
-            "adx", "g722", "gsm", "caf", "voc", "au", "snd", "8svx", "svx", "16sv", "maud",
+            "sf2", "sfz", "pat",
+            "dsf", "dff",
+            "adx", "caf", "voc", "au", "snd", "8svx", "svx", "16sv", "maud",
             "w64", "rf64", "avr", "ircam", "sph", "pvf", "wve", "htk"
         )) return true
         return ext == "m4a" && AlacAndMpeg2Decoder.canDecode(probe.bytes, ext)

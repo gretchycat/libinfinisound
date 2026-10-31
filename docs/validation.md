@@ -61,3 +61,15 @@ The host gate reports 683 cases: 653 pass and the same 30 known pre-migration fa
 The same final APK passes 46 pipeline cases: the preceding 27 checks, seven PCM extractor cases, three fifteen-minute seek cases (variable/320 kbps MPEG and 24-bit FLAC), file/shared-source tagged gapless handoff, three direct positional metadata/decode cases, explicit staging fallback and three local owner-supplied MP3 cases. Positional MPEG/FLAC windows match continuous portable decoding exactly; AAC validates its exact frame count/tags and PCM reads without claiming cross-backend sample equality. Native seek checks run muted with concurrent analysis, retain the local 1500 ms budget and wait for the requested target's callback because older completions may arrive after a listener change. Original recordings remain outside source control.
 
 Live remote latency, visualizer/image UI and audible high-resolution playback still require handset acceptance. A cold MPEG seek still scans encoded packet headers. Provider timeouts and expensive archive extraction adapters retain their limits. The known long-FLAC failure recorded in the preceding checkpoint is now resolved; no universal codec/network or native iOS claim is made.
+
+## Substitute-audio rejection correction (2026-10-31)
+
+Six new core tests reject the former fixed-chord paths, including RealMedia
+headers without an extension, assert that failed preparation publishes no WAVE,
+and verify missing sample failures plus exact SFZ sample bytes/rate. Core total:
+75 passing cases. The host corrects three old fixture expectations that treated
+placeholder synthesis as decoding; its regenerated JVM report records those
+unavailable codecs as failures rather than claiming successful device playback.
+The 830-case host gate retains the same 30 pre-migration failures. Packaged-APK
+checks reject invalid common inputs and missing soundbank samples and confirm
+AMR-NB/WB still decode through actual Android.MediaCodec backends.
