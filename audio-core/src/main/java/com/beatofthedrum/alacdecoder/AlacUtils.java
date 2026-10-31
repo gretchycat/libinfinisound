@@ -85,6 +85,7 @@ public class AlacUtils
 				
 				qtmovie.qtstream.stream = input_stream;
 				qtmovie.qtstream.currentPos = 0;
+                qtmovie.qtstream.pendingByte = -2;
 				StreamUtils.stream_skip(qtmovie.qtstream, qtmovie.saved_mdat_pos);
 			}
 			catch (java.io.FileNotFoundException fe)
@@ -155,7 +156,7 @@ public class AlacUtils
 		/* now fetch */
 		outputBytes = destBufferSize;
 
-		outputBytes = AlacDecodeUtils.decode_frame(ac.alac, read_buffer, pDestBuffer, outputBytes);
+		outputBytes = AlacDecodeUtils.decode_frame(ac.alac, read_buffer, pDestBuffer, outputBytes, sample_byte_size);
 		
 		ac.current_sample_block = ac.current_sample_block + 1;
 		outputBytes -= ac.offset * AlacGetBytesPerSample(ac);

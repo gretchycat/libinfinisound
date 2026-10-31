@@ -52,8 +52,10 @@ class AlacDecodeUtils
 	/* stream reading */
 
 	/* supports reading 1 to 16 bits, in big endian format */
-	static int readbits_16(AlacFile alac, int bits ) 
-	{
+	static int readbits_16(AlacFile alac, int bits )
+    {
+        if (bits < 0 || bits > 16 || (long) alac.ibIdx * 8 + alac.input_buffer_bitaccumulator + bits > (long) alac.input_buffer_size * 8)
+            throw new IllegalArgumentException("Incomplete ALAC frame bits");
 		int result  = 0;
 		int new_accumulator = 0;
 		int part1 = 0;
@@ -61,8 +63,8 @@ class AlacDecodeUtils
 		int part3 =0;
 		
 		part1 = (alac.input_buffer[alac.ibIdx] & 0xff);
-		part2 = (alac.input_buffer[alac.ibIdx + 1] & 0xff);
-		part3 = (alac.input_buffer[alac.ibIdx + 2] & 0xff);		
+		part2 = (alac.ibIdx + 1 < alac.input_buffer_size ? alac.input_buffer[alac.ibIdx + 1] & 0xff : 0);
+		part3 = (alac.ibIdx + 2 < alac.input_buffer_size ? alac.input_buffer[alac.ibIdx + 2] & 0xff : 0);		
 		
 		result = ((part1 << 16) | (part2 << 8) | part3);
 
@@ -106,8 +108,10 @@ class AlacDecodeUtils
 	}
 
 	/* reads a single bit */
-	static int readbit(AlacFile alac) 
-	{
+	static int readbit(AlacFile alac)
+    {
+        if ((long) alac.ibIdx * 8 + alac.input_buffer_bitaccumulator >= (long) alac.input_buffer_size * 8)
+            throw new IllegalArgumentException("Incomplete ALAC frame bit");
 		int result = 0;
 		int new_accumulator = 0;
 		int part1 = 0;
@@ -596,6 +600,14 @@ class AlacDecodeUtils
 
 	public static int decode_frame(AlacFile alac, byte[] inbuffer, int[] outbuffer, int outputsize )
 	{
+        return decode_frame(alac, inbuffer, outbuffer, outputsize, inbuffer.length);
+    }
+
+    public static int decode_frame(AlacFile alac, byte[] inbuffer, int[] outbuffer, int outputsize, int inputSize) {
+        if (inputSize <= 0 || inputSize > inbuffer.length || alac.numchannels < 1 || alac.numchannels > 2 ||
+            (alac.setinfo_sample_size != 16 && alac.setinfo_sample_size != 24))
+            throw new IllegalArgumentException("Unsupported ALAC frame representation");
+        alac.input_buffer_size = inputSize;
 		int channels ;
 		int outputsamples  = alac.setinfo_max_samples_per_frame;
 
@@ -606,8 +618,15 @@ class AlacDecodeUtils
 
 
 		channels = readbits(alac, 3);
+        if (channels > 1 || channels + 1 != alac.numchannels)
+            throw new IllegalArgumentException("Unsupported ALAC channel layout");
+        if (outputsamples <= 0 || outputsamples > alac.outputsamples_buffer_a.length)
+            throw new IllegalArgumentException("Invalid ALAC frame sample count");
 
-		outputsize = outputsamples * alac.bytespersample;
+		if (outputsamples <= 0 || outputsamples > alac.outputsamples_buffer_a.length ||
+            (long) outputsamples * alac.bytespersample > outbuffer.length)
+            throw new IllegalArgumentException("Invalid ALAC output size");
+        outputsize = outputsamples * alac.bytespersample;
 
 		if(channels == 0) // 1 channel
 		{
@@ -638,7 +657,10 @@ class AlacDecodeUtils
 				/* now read the number of samples,
 				 * as a 32bit integer */
 				outputsamples = readbits(alac, 32);
-				outputsize = outputsamples * alac.bytespersample;
+				if (outputsamples <= 0 || outputsamples > alac.outputsamples_buffer_a.length ||
+            (long) outputsamples * alac.bytespersample > outbuffer.length)
+            throw new IllegalArgumentException("Invalid ALAC output size");
+        outputsize = outputsamples * alac.bytespersample;
 			}
 
 			readsamplesize = alac.setinfo_sample_size - (uncompressed_bytes * 8);
@@ -657,6 +679,7 @@ class AlacDecodeUtils
 				readbits(alac, 8);
 
 				prediction_type = readbits(alac, 4);
+                if (prediction_type != 0) throw new IllegalArgumentException("Unsupported ALAC prediction type: " + prediction_type);
 				prediction_quantitization = readbits(alac, 4);
 
 				ricemodifier = readbits(alac, 3);
@@ -693,7 +716,7 @@ class AlacDecodeUtils
 				}
 				else
 				{
-					System.err.println("FIXME: unhandled predicition type: " +prediction_type);
+					throw new IllegalArgumentException("Unsupported ALAC prediction type: " + prediction_type);
 					
 					/* i think the only other prediction type (or perhaps this is just a
 					 * boolean?) runs adaptive fir twice.. like:
@@ -794,7 +817,7 @@ class AlacDecodeUtils
 			}
 			case 20:
 			case 32:
-				System.err.println("FIXME: unimplemented sample size " + alac.setinfo_sample_size);
+				throw new IllegalArgumentException("Unsupported ALAC sample size: " + alac.setinfo_sample_size);
 			default:
 
 			}
@@ -828,7 +851,10 @@ class AlacDecodeUtils
 				/* now read the number of samples,
 				 * as a 32bit integer */
 				outputsamples = readbits(alac, 32);	
-				outputsize = outputsamples * alac.bytespersample;
+				if (outputsamples <= 0 || outputsamples > alac.outputsamples_buffer_a.length ||
+            (long) outputsamples * alac.bytespersample > outbuffer.length)
+            throw new IllegalArgumentException("Invalid ALAC output size");
+        outputsize = outputsamples * alac.bytespersample;
 			}
 
 			readsamplesize = alac.setinfo_sample_size - (uncompressed_bytes * 8) + 1;
@@ -854,6 +880,7 @@ class AlacDecodeUtils
 
 				/******** channel 1 ***********/
 				prediction_type_a = readbits(alac, 4);
+                if (prediction_type_a != 0) throw new IllegalArgumentException("Unsupported ALAC prediction type: " + prediction_type_a);
 				prediction_quantitization_a = readbits(alac, 4);
 
 				ricemodifier_a = readbits(alac, 3);
@@ -874,6 +901,7 @@ class AlacDecodeUtils
 
 				/******** channel 2 *********/
 				prediction_type_b = readbits(alac, 4);
+                if (prediction_type_b != 0) throw new IllegalArgumentException("Unsupported ALAC prediction type: " + prediction_type_b);
 				prediction_quantitization_b = readbits(alac, 4);
 
 				ricemodifier_b = readbits(alac, 3);
@@ -914,7 +942,7 @@ class AlacDecodeUtils
 				}
 				else
 				{ // see mono case
-					System.err.println("FIXME: unhandled predicition type: " + prediction_type_a);
+					throw new IllegalArgumentException("Unsupported ALAC prediction type: " + prediction_type_a);
 				}
 
 				/* channel 2 */
@@ -926,7 +954,7 @@ class AlacDecodeUtils
 				}
 				else
 				{
-					System.err.println("FIXME: unhandled predicition type: " + prediction_type_b);
+					throw new IllegalArgumentException("Unsupported ALAC prediction type: " + prediction_type_b);
 				}
 			}
 			else
@@ -997,7 +1025,7 @@ class AlacDecodeUtils
 			}
 			case 20:
 			case 32:
-				System.err.println("FIXME: unimplemented sample size " + alac.setinfo_sample_size);
+				throw new IllegalArgumentException("Unsupported ALAC sample size: " + alac.setinfo_sample_size);
 
 			default:
 

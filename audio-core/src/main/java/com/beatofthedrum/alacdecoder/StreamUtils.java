@@ -11,158 +11,85 @@
 
 package com.beatofthedrum.alacdecoder;
 
-class StreamUtils
-{
-    public static void stream_read(MyStream mystream, int size, int[] buf, int startPos) {
-        byte[] byteBuf = new byte[size];
-        int bytes_read = stream_read(mystream, size, byteBuf, 0);
-        for(int i=0; i < bytes_read; i++) {
-			buf[startPos + i] = byteBuf[i];
-		}
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+
+class StreamUtils {
+    private static int next(MyStream stream) throws IOException {
+        int value;
+        if (stream.pendingByte != -2) {
+            value = stream.pendingByte;
+            stream.pendingByte = -2;
+        } else value = stream.stream.read();
+        if (value < 0) throw new EOFException("Incomplete ALAC input at " + stream.currentPos);
+        stream.currentPos++;
+        return value;
     }
 
-	public static int stream_read(MyStream mystream, int size, byte[] buf, int startPos)
-	{
-		int bytes_read = 0;
-
-		try
-		{
-			bytes_read = mystream.stream.read(buf, startPos, size);
-		}
-		catch (Exception err)
-		{
-			System.err.println("stream_read: exception thrown: " + err);
-		}
-		mystream.currentPos = mystream.currentPos + bytes_read;
-        return bytes_read;
-	}
-
-	public static int stream_read_uint32(MyStream mystream)
-	{
-		int v = 0;
-		int tmp = 0;
-		byte[] bytebuf = mystream.read_buf;
-		int bytes_read = 0;
-
-		try
-		{
-			bytes_read = mystream.stream.read(bytebuf, 0, 4);
-			mystream.currentPos = mystream.currentPos + bytes_read;
-			tmp =  (bytebuf[0] & 0xff);
-
-			v = tmp << 24;
-			tmp =  (bytebuf[1] & 0xff);
-
-			v = v | (tmp << 16);
-			tmp =  (bytebuf[2] & 0xff);
-
-			v = v | (tmp << 8);
-
-			tmp =  (bytebuf[3] & 0xff);
-			v = v | tmp;
-
-		}
-		catch (Exception err)
-		{
-			System.err.println("stream_read_uint32: exception thrown: " + err);
-		}
-		
-		return v;
-	}
-
-	public static int stream_read_int16(MyStream mystream)
-	{
-		int v = 0;
-		try
-		{
-			v = mystream.stream.readShort();
-			mystream.currentPos = mystream.currentPos + 2;
-		}
-		catch (Exception err)
-		{
-		}
-		
-		return v;
-	}
-	public static int stream_read_uint16(MyStream mystream)
-	{
-		int v = 0;
-		int tmp = 0;
-		byte[] bytebuf = mystream.read_buf;
-		int bytes_read = 0;
-
-		try
-		{
-			bytes_read = mystream.stream.read(bytebuf, 0, 2);
-			mystream.currentPos = mystream.currentPos + bytes_read;
-			tmp =  (bytebuf[0] & 0xff);
-			v = tmp << 8;
-			tmp =  (bytebuf[1] & 0xff);
-			
-			v = v | tmp;
-		}
-		catch (Exception e)
-		{
-		}
-
-		return v;
-	}
-
-	public static int stream_read_uint8(MyStream mystream)
-	{
-		int v = 0;
-		int bytes_read = 0;
-		byte[] bytebuf = mystream.read_buf;
-		
-		try
-		{
-			bytes_read = mystream.stream.read(bytebuf, 0, 1);
-			v =  (bytebuf[0] & 0xff);
-			mystream.currentPos = mystream.currentPos + 1;
-		}
-		catch (Exception e)
-		{
-		}		
-			
-		return v;
-	}
-
-	public static void stream_skip(MyStream mystream, int skip)
-	{
-        int toskip = skip;
-        int bytes_read = 0;
-
-        if(toskip < 0)
-		{
-			System.err.println("stream_skip: request to seek backwards in stream - not supported, sorry");
-			return;
-		}
-
-        try
-        {
-            bytes_read = mystream.stream.skipBytes(toskip);
-            mystream.currentPos = mystream.currentPos + bytes_read;
-        }
-        catch (java.io.IOException ioe)
-        {
-        }
+    public static int stream_read(MyStream stream, int size, byte[] buffer, int start) {
+        if (size < 0 || start < 0 || size > buffer.length - start) throw new IllegalArgumentException("Invalid read range");
+        try {
+            int read = 0;
+            if (size > 0 && stream.pendingByte != -2) buffer[start + read++] = (byte) next(stream);
+            while (read < size) {
+                int count = stream.stream.read(buffer, start + read, size - read);
+                if (count < 0) throw new EOFException("Incomplete ALAC input at " + stream.currentPos);
+                if (count == 0) { buffer[start + read++] = (byte) next(stream); }
+                else { stream.currentPos += count; read += count; }
+            }
+            return size;
+        } catch (IOException error) { throw new UncheckedIOException(error); }
     }
 
-	public static int stream_eof(MyStream mystream)
-	{
-		// TODO
+    public static void stream_read(MyStream stream, int size, int[] buffer, int start) {
+        if (size < 0 || start < 0 || size > buffer.length - start) throw new IllegalArgumentException("Invalid read range");
+        byte[] bytes = new byte[size];
+        stream_read(stream, size, bytes, 0);
+        for (int i = 0; i < size; i++) buffer[start + i] = bytes[i];
+    }
 
-		return 0;
-	}
+    public static int stream_read_uint8(MyStream stream) {
+        try { return next(stream); }
+        catch (IOException error) { throw new UncheckedIOException(error); }
+    }
 
-	public static int stream_tell(MyStream mystream)
-	{
-		return (mystream.currentPos);
-	}
-	public static int stream_setpos(MyStream mystream, int pos)
-	{		
-		return -1;
-	}
+    public static int stream_read_uint16(MyStream stream) {
+        return (stream_read_uint8(stream) << 8) | stream_read_uint8(stream);
+    }
 
+    public static int stream_read_int16(MyStream stream) {
+        return (short) stream_read_uint16(stream);
+    }
+
+    public static int stream_read_uint32(MyStream stream) {
+        return (stream_read_uint16(stream) << 16) | stream_read_uint16(stream);
+    }
+
+    public static void stream_skip(MyStream stream, int count) {
+        if (count < 0) throw new IllegalArgumentException("Backward ALAC skip");
+        try {
+            if (count > 0 && stream.pendingByte != -2) { next(stream); count--; }
+            while (count > 0) {
+                long skipped = stream.stream.skip(count);
+                if (skipped == 0) { next(stream); count--; }
+                else { stream.currentPos += (int) skipped; count -= (int) skipped; }
+            }
+        } catch (IOException error) { throw new UncheckedIOException(error); }
+    }
+
+    public static int stream_eof(MyStream stream) {
+        try {
+            if (stream.pendingByte == -2) stream.pendingByte = stream.stream.read();
+            return stream.pendingByte == -1 ? 1 : 0;
+        } catch (IOException error) { throw new UncheckedIOException(error); }
+    }
+
+    public static int stream_tell(MyStream stream) { return stream.currentPos; }
+
+    public static int stream_setpos(MyStream stream, int position) {
+        if (position < stream.currentPos) return -1; // Caller reopens for backward positioning.
+        stream_skip(stream, position - stream.currentPos);
+        return 0;
+    }
 }
-

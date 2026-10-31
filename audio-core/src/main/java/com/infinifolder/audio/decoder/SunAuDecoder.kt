@@ -18,14 +18,17 @@ object SunAuDecoder {
         if (!canDecode(bytes)) return null
         val bb = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
         bb.int // skip magic
-        val dataOffset = bb.int.coerceAtLeast(24)
+        val dataOffset = bb.int
         val dataSize = bb.int
         val encoding = bb.int
         val sampleRate = bb.int
         val channels = bb.int
 
-        if (sampleRate <= 0 || channels <= 0 || dataOffset >= bytes.size) return null
-        val availableDataLen = if (dataSize > 0 && dataOffset + dataSize <= bytes.size) dataSize else bytes.size - dataOffset
+        if (sampleRate <= 0 || channels !in 1..8 || dataOffset !in 24 until bytes.size) return null
+        val width = when (encoding) { 1, 2, 27 -> 1; 3 -> 2; 4 -> 3; 5, 6 -> 4; else -> return null }
+        val availableDataLen = if (dataSize == -1) bytes.size - dataOffset else dataSize
+        if (availableDataLen <= 0 || availableDataLen > bytes.size - dataOffset ||
+            availableDataLen % (width * channels) != 0) return null
 
         return when (encoding) {
             1 -> { // 8-bit ISDN u-law
@@ -56,10 +59,7 @@ object SunAuDecoder {
             27 -> { // 8-bit ISDN A-law
                 AudioPcmData.decodeAlaw(bytes, sampleRate, channels, dataOffset, availableDataLen)
             }
-            else -> {
-                // Fallback attempt: try 16-bit big-endian
-                AudioPcmData.from16BitBigEndian(bytes, sampleRate, channels, dataOffset, availableDataLen)
-            }
+            else -> null
         }
     }
 }

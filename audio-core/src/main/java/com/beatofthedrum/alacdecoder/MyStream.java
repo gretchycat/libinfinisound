@@ -15,5 +15,6 @@ class MyStream
 {
 	public java.io.DataInputStream stream;
 	public int currentPos = 0;
+    public int pendingByte = -2; // -2 means no lookahead; -1 means EOF.
     public byte[] read_buf = new byte[8];
 }

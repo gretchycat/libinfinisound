@@ -23,7 +23,7 @@ object IffAudioDecoder {
         val formType = String(bytes, 8, 4, Charsets.US_ASCII)
 
         var pos = 12
-        var sampleRate = 22050
+        var sampleRate = 0
         var channels = 1
         var bits = 8
         var isFibonacci = false
@@ -34,12 +34,13 @@ object IffAudioDecoder {
             val chunkId = String(bytes, pos, 4, Charsets.US_ASCII)
             val chunkSize = ByteBuffer.wrap(bytes, pos + 4, 4).order(ByteOrder.BIG_ENDIAN).int.toLong() and 0xFFFFFFFFL
             val chunkDataPos = pos + 8
+            if (chunkSize > bytes.size - chunkDataPos) return null
             pos += 8 + chunkSize.toInt()
             if ((chunkSize and 1L) == 1L) pos++ // IFF pad byte
 
             when (chunkId) {
                 "VHDR" -> {
-                    if (chunkDataPos + 16 <= bytes.size) {
+                    if (chunkSize >= 16) {
                         val bb = ByteBuffer.wrap(bytes, chunkDataPos, 16).order(ByteOrder.BIG_ENDIAN)
                         val oneShot = bb.int.toLong() and 0xFFFFFFFFL
                         val repeat = bb.int.toLong() and 0xFFFFFFFFL
@@ -48,13 +49,15 @@ object IffAudioDecoder {
                         val ctOctave = bb.get().toInt() and 0xFF
                         val compression = bb.get().toInt() and 0xFF
 
-                        sampleRate = if (sr > 0) sr else 22050
+                        if (compression !in 0..1 || formType == "16SV" && compression != 0) return null
+                        sampleRate = sr
                         isFibonacci = compression == 1
                     }
                 }
                 "CHAN" -> {
-                    if (chunkDataPos + 4 <= bytes.size) {
+                    if (chunkSize >= 4) {
                         val chanMask = ByteBuffer.wrap(bytes, chunkDataPos, 4).order(ByteOrder.BIG_ENDIAN).int
+                        if (chanMask !in setOf(2, 4, 6)) return null
                         channels = if (chanMask == 6) 2 else 1
                     }
                 }
@@ -63,16 +66,19 @@ object IffAudioDecoder {
                     bodyLength = chunkSize.toInt().coerceAtMost(bytes.size - chunkDataPos)
                 }
                 "MHDR" -> { // MAUD header
-                    if (chunkDataPos + 20 <= bytes.size) {
+                    if (chunkSize >= 20) {
                         val bb = ByteBuffer.wrap(bytes, chunkDataPos, 20).order(ByteOrder.BIG_ENDIAN)
                         bb.int // skip total samples (bytes 0..3)
                         val sampleSize = bb.short.toInt() and 0xFFFF // bytes 4..5
                         bits = bb.short.toInt() and 0xFFFF // bytes 6..7
                         val sr = bb.int // bytes 8..11
-                        sampleRate = if (sr > 0) sr else 44100
-                        bb.short // compression (bytes 12..13)
-                        bb.short // format (bytes 14..15)
-                        channels = (bb.short.toInt() and 0xFFFF).coerceIn(1, 2) // channels (bytes 16..17)
+                        val divisor = bb.short.toInt() and 0xFFFF // Clock divisor (bytes 12..13)
+                        if (divisor == 0) return null
+                        sampleRate = sr / divisor
+                        val channelInfo = bb.short.toInt() and 0xFFFF
+                        channels = bb.short.toInt() and 0xFFFF
+                        val compression = bb.short.toInt() and 0xFFFF // bytes 18..19
+                        if (compression != 0 || channelInfo != channels - 1) return null
                     }
                 }
                 "MDAT" -> { // MAUD data
@@ -82,7 +88,10 @@ object IffAudioDecoder {
             }
         }
 
-        if (bodyOffset < 0 || bodyLength <= 0) return null
+        if (bodyOffset < 0 || bodyLength <= 0 || sampleRate <= 0 || channels !in 1..2) return null
+        val width = if (formType == "16SV" || formType == "MAUD" && bits == 16) 2 else 1
+        if (formType == "MAUD" && bits !in setOf(8, 16)) return null
+        if (bodyLength % (channels * width) != 0 || isFibonacci && bodyLength <= 2 * channels) return null
 
         if (formType == "MAUD") {
             return if (bits == 16) {

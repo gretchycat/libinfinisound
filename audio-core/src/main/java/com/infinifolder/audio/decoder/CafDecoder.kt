@@ -20,7 +20,7 @@ object CafDecoder {
         var sampleRate = 44100
         var formatId = "lpcm"
         var formatFlags = 0
-        var channels = 2
+        var channels = 0
         var bitsPerChannel = 16
 
         var dataOffset = -1
@@ -30,27 +30,30 @@ object CafDecoder {
             val chunkType = String(bytes, pos, 4, Charsets.US_ASCII)
             val chunkSize = ByteBuffer.wrap(bytes, pos + 4, 8).order(ByteOrder.BIG_ENDIAN).long
             val chunkDataPos = pos + 12
+            if (chunkSize < 0 && !(chunkType == "data" && chunkSize == -1L)) return null
+            if (chunkSize >= 0 && chunkSize > bytes.size - chunkDataPos) return null
             val nextPos = if (chunkSize >= 0) chunkDataPos + chunkSize.toInt() else bytes.size
 
             when (chunkType) {
                 "desc" -> {
-                    if (chunkDataPos + 32 <= bytes.size) {
+                    if (chunkSize >= 32) {
                         val bb = ByteBuffer.wrap(bytes, chunkDataPos, 32).order(ByteOrder.BIG_ENDIAN)
                         val srDbl = bb.double
-                        sampleRate = if (srDbl > 0) srDbl.toInt() else 44100
+                        if (!srDbl.isFinite() || srDbl <= 0 || srDbl > Int.MAX_VALUE) return null
+                        sampleRate = srDbl.toInt()
                         val fmtBytes = ByteArray(4)
                         bb.get(fmtBytes)
                         formatId = String(fmtBytes, Charsets.US_ASCII)
                         formatFlags = bb.int
                         val bytesPerPacket = bb.int
                         val framesPerPacket = bb.int
-                        channels = bb.int.coerceIn(1, 8)
+                        channels = bb.int
                         bitsPerChannel = bb.int
                     }
                 }
                 "data" -> {
                     // First 4 bytes of data chunk is editCount
-                    if (chunkDataPos + 4 <= bytes.size) {
+                    if (chunkSize == -1L || chunkSize >= 4) {
                         dataOffset = chunkDataPos + 4
                         dataSize = if (chunkSize >= 4) chunkSize - 4 else (bytes.size - dataOffset).toLong()
                     }
@@ -61,7 +64,12 @@ object CafDecoder {
             pos = nextPos.coerceAtLeast(pos + 12)
         }
 
-        if (dataOffset < 0 || dataOffset >= bytes.size) return null
+        if (dataOffset < 0 || dataOffset >= bytes.size || channels !in 1..8) return null
+        if (formatId !in setOf("lpcm", "ulaw", "alaw")) return null
+        if (formatId == "lpcm" && (bitsPerChannel !in setOf(8, 16, 24, 32) ||
+                (formatFlags and 1 != 0 && bitsPerChannel != 32))) return null
+        val width = if (formatId == "lpcm") bitsPerChannel / 8 else 1
+        if (dataSize <= 0 || dataSize % (width * channels) != 0L) return null
         val len = (if (dataSize > 0) dataSize.toInt() else (bytes.size - dataOffset)).coerceAtMost(bytes.size - dataOffset)
 
         val isLittleEndian = (formatFlags and 0x02) != 0
@@ -101,9 +109,7 @@ object CafDecoder {
                 }
                 AudioPcmData(sampleRate, channels, samples, 16)
             }
-            else -> {
-                AudioPcmData.from16BitBigEndian(bytes, sampleRate, channels, dataOffset, len)
-            }
+            else -> null
         }
     }
 }

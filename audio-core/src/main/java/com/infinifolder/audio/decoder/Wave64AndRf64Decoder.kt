@@ -32,7 +32,7 @@ object Wave64AndRf64Decoder {
 
     private fun decodeRf64(bytes: ByteArray): AudioPcmData? {
         var pos = 12
-        var channels = 2
+        var channels = 0
         var sampleRate = 44100
         var bitsPerSample = 16
         var formatTag = 1
@@ -43,11 +43,12 @@ object Wave64AndRf64Decoder {
             val chunkId = String(bytes, pos, 4, Charsets.US_ASCII)
             val chunkSize32 = ByteBuffer.wrap(bytes, pos + 4, 4).order(ByteOrder.LITTLE_ENDIAN).int.toLong() and 0xFFFFFFFFL
             val chunkDataPos = pos + 8
-            val nextPos = chunkDataPos + (if (chunkSize32 != 0xFFFFFFFFL) chunkSize32 else 0L).toInt()
+            if (chunkSize32 != 0xFFFFFFFFL && chunkSize32 > bytes.size - chunkDataPos) return null
+            if (chunkSize32 == 0xFFFFFFFFL && chunkId != "data") return null
 
             when (chunkId) {
                 "ds64" -> {
-                    if (chunkDataPos + 24 <= bytes.size) {
+                    if (chunkSize32 >= 24) {
                         val bb = ByteBuffer.wrap(bytes, chunkDataPos, 24).order(ByteOrder.LITTLE_ENDIAN)
                         val riffSize64 = bb.long
                         val dataSize64 = bb.long
@@ -57,7 +58,7 @@ object Wave64AndRf64Decoder {
                     pos = chunkDataPos + chunkSize32.toInt()
                 }
                 "fmt " -> {
-                    if (chunkDataPos + 16 <= bytes.size) {
+                    if (chunkSize32 >= 16) {
                         val bb = ByteBuffer.wrap(bytes, chunkDataPos, 16).order(ByteOrder.LITTLE_ENDIAN)
                         formatTag = bb.short.toInt() and 0xFFFF
                         channels = bb.short.toInt() and 0xFFFF
@@ -81,7 +82,7 @@ object Wave64AndRf64Decoder {
             }
         }
 
-        if (dataOffset < 0 || dataOffset >= bytes.size) return null
+        if (dataOffset < 0 || dataOffset >= bytes.size || dataSize <= 0 || dataSize > bytes.size - dataOffset) return null
         val len = dataSize.toInt().coerceAtMost(bytes.size - dataOffset)
 
         return decodePcmSamples(bytes, dataOffset, len, sampleRate, channels, bitsPerSample, formatTag)
@@ -89,7 +90,7 @@ object Wave64AndRf64Decoder {
 
     private fun decodeWave64(bytes: ByteArray): AudioPcmData? {
         var pos = 40 // Wave64 header is 40 bytes: 16 (riff GUID) + 8 (size) + 16 (wave GUID)
-        var channels = 2
+        var channels = 0
         var sampleRate = 44100
         var bitsPerSample = 16
         var formatTag = 1
@@ -105,11 +106,12 @@ object Wave64AndRf64Decoder {
 
             val chunkSize = ByteBuffer.wrap(bytes, pos + 16, 8).order(ByteOrder.LITTLE_ENDIAN).long
             val dataPayloadPos = pos + 24
-            val dataPayloadLen = (chunkSize - 24).coerceAtLeast(0)
+            if (chunkSize < 24 || chunkSize > bytes.size - pos) return null
+            val dataPayloadLen = chunkSize - 24
 
             when (chunkType) {
                 "fmt " -> {
-                    if (dataPayloadPos + 16 <= bytes.size) {
+                    if (dataPayloadLen >= 16) {
                         val bb = ByteBuffer.wrap(bytes, dataPayloadPos, 16).order(ByteOrder.LITTLE_ENDIAN)
                         formatTag = bb.short.toInt() and 0xFFFF
                         channels = bb.short.toInt() and 0xFFFF
@@ -131,7 +133,7 @@ object Wave64AndRf64Decoder {
             pos += paddedLen.toInt()
         }
 
-        if (dataOffset < 0 || dataOffset >= bytes.size) return null
+        if (dataOffset < 0 || dataOffset >= bytes.size || dataSize <= 0 || dataSize > bytes.size - dataOffset) return null
         val len = (if (dataSize > 0) dataSize.toInt() else (bytes.size - dataOffset)).coerceAtMost(bytes.size - dataOffset)
 
         return decodePcmSamples(bytes, dataOffset, len, sampleRate, channels, bitsPerSample, formatTag)
@@ -140,9 +142,12 @@ object Wave64AndRf64Decoder {
     private fun decodePcmSamples(
         bytes: ByteArray, offset: Int, length: Int,
         sampleRate: Int, channels: Int, bitsPerSample: Int, formatTag: Int
-    ): AudioPcmData {
-        val sr = if (sampleRate > 0) sampleRate else 44100
-        val ch = if (channels > 0) channels else 2
+    ): AudioPcmData? {
+        if (formatTag !in setOf(1, 3) || bitsPerSample !in setOf(8, 16, 24, 32) ||
+            formatTag == 3 && bitsPerSample != 32 || sampleRate <= 0 || channels !in 1..8 ||
+            length <= 0 || length % (channels * (bitsPerSample / 8)) != 0) return null
+        val sr = sampleRate
+        val ch = channels
 
         if (formatTag == 3) { // IEEE Float
             return AudioPcmData.from32BitFloat(bytes, sr, ch, bigEndian = false, offset = offset, length = length)
@@ -161,7 +166,7 @@ object Wave64AndRf64Decoder {
                 }
                 AudioPcmData(sr, ch, samples, 16)
             }
-            else -> AudioPcmData.from16BitLittleEndian(bytes, sr, ch, offset, length)
+            else -> null
         }
     }
 }

@@ -14,6 +14,7 @@ class AlacFile
 {
 
 	byte input_buffer[];
+    int input_buffer_size;
 	int ibIdx = 0;
 	int input_buffer_bitaccumulator = 0; /* used so we can do arbitary
 						bit reads */

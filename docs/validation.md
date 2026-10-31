@@ -73,3 +73,28 @@ unavailable codecs as failures rather than claiming successful device playback.
 The 830-case host gate retains the same 30 pre-migration failures. Packaged-APK
 checks reject invalid common inputs and missing soundbank samples and confirm
 AMR-NB/WB still decode through actual Android.MediaCodec backends.
+
+## Declared codecs and ALAC input boundaries (2026-10-31)
+
+Unknown codec identifiers in AU, AIFC, CAF, RF64/Wave64, IFF and VOC now reject
+instead of interpreting their payload as PCM. Header/chunk/frame validation
+preserves supported PCM, float and companding paths. MAUD reads its actual clock
+divisor and compression fields; VOC rejects unimplemented timing blocks and
+format changes rather than silently skipping or relabeling them. Registered
+backends may still decode a source after another backend rejects it.
+
+ALAC input helpers fill short reads, detect EOF without inventing zero/stale
+header bytes and implement forward positioning, retaining the demuxer's explicit
+reopen fallback for backward positioning. Frames reject unsupported predictors,
+representations and out-of-packet bit reads. The adapter correctly reduces 24-bit
+little-endian output to 16-bit PCM. New independent synthetic ALAC fixtures
+compare every sample across full and short packets at both precisions; malformed
+header/frame tests check rejection before output. Original BSD notices remain.
+
+This checkpoint has 95 passing core cases (20 new boundary/format tests). The
+consuming app's 867-case gate preserves all earlier outcomes, including its 30
+known storage failures. The packaged Android audit rejects all nine altered audio
+inputs, including standard WAVE, and all nine original audio controls retain
+identical PCM SHA-256 hashes. Native playback/seek/gapless validation is recorded
+by the consuming application's checkpoint; JVM checks do not establish sound
+output on a device.

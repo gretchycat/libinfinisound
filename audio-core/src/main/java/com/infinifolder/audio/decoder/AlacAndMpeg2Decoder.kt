@@ -87,8 +87,12 @@ object AlacAndMpeg2Decoder {
             f.deleteOnExit()
             f
         }
-        val ac = AlacUtils.AlacOpenFileInput(tempFile.absolutePath)
+        val ac = try { AlacUtils.AlacOpenFileInput(tempFile.absolutePath) } catch (_: Exception) {
+            if (tempFile != file) tempFile.delete()
+            return null
+        }
         if (ac.error) {
+            runCatching { ac.close() }
             if (tempFile != file) tempFile.delete()
             return null
         }
@@ -96,6 +100,8 @@ object AlacAndMpeg2Decoder {
         return try {
             val sampleRate = AlacUtils.AlacGetSampleRate(ac)
             val channels = AlacUtils.AlacGetNumChannels(ac)
+            val bits = AlacUtils.AlacGetBitsPerSample(ac)
+            if (bits !in setOf(16, 24)) return null
             val destBufferSize = 1024 * 24 * 3
             val pDestBuffer = IntArray(destBufferSize)
             val sampleList = mutableListOf<Short>()
@@ -103,9 +109,11 @@ object AlacAndMpeg2Decoder {
             while (true) {
                 val bytesUnpacked = AlacUtils.AlacUnpackSamples(ac, pDestBuffer)
                 if (bytesUnpacked <= 0) break
-                val numSamples = bytesUnpacked / 2
+                val numSamples = bytesUnpacked / (bits / 8)
                 for (i in 0 until numSamples) {
-                    sampleList.add(pDestBuffer[i].toShort())
+                    val sample = if (bits == 16) pDestBuffer[i] else
+                        (pDestBuffer[i * 3 + 1] and 255) or ((pDestBuffer[i * 3 + 2] and 255) shl 8)
+                    sampleList.add(sample.toShort())
                 }
             }
             if (sampleList.isEmpty()) null

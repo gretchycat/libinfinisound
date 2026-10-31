@@ -196,7 +196,7 @@ internal object BuiltInAudioDecoders {
 
     private fun decodeStandardWav(bytes: ByteArray): AudioPcmData? {
         var pos = 12
-        var channels = 2
+        var channels = 0
         var sampleRate = 44100
         var bits = 16
         var formatTag = 1
@@ -210,11 +210,12 @@ internal object BuiltInAudioDecoders {
                     ((bytes[pos + 6].toInt() and 0xFF) shl 16) or
                     ((bytes[pos + 7].toInt() and 0xFF) shl 24)
             val chunkDataPos = pos + 8
-            pos = chunkDataPos + chunkSize.coerceAtLeast(0)
+            if (chunkSize < 0 || chunkSize > bytes.size - chunkDataPos) return null
+            pos = chunkDataPos + chunkSize + (chunkSize and 1)
 
             when (chunkId) {
                 "fmt " -> {
-                    if (chunkDataPos + 16 <= bytes.size) {
+                    if (chunkSize >= 16) {
                         val bb = java.nio.ByteBuffer.wrap(bytes, chunkDataPos, 16).order(java.nio.ByteOrder.LITTLE_ENDIAN)
                         formatTag = bb.short.toInt() and 0xFFFF
                         channels = bb.short.toInt() and 0xFFFF
@@ -232,7 +233,9 @@ internal object BuiltInAudioDecoders {
             }
         }
 
-        if (dataOffset < 0 || dataLen <= 0) return null
+        if (dataOffset < 0 || dataLen <= 0 || formatTag !in setOf(1, 3) || bits !in setOf(8, 16, 24, 32) ||
+            formatTag == 3 && bits != 32 || sampleRate <= 0 || channels !in 1..8 ||
+            dataLen % (channels * (bits / 8)) != 0) return null
 
         return when {
             formatTag == 3 -> AudioPcmData.from32BitFloat(bytes, sampleRate, channels, bigEndian = false, offset = dataOffset, length = dataLen)
@@ -246,7 +249,7 @@ internal object BuiltInAudioDecoders {
                 for (i in 0 until count) samples[i] = (bb.int shr 16).toShort()
                 AudioPcmData(sampleRate, channels, samples, 16)
             }
-            else -> AudioPcmData.from16BitLittleEndian(bytes, sampleRate, channels, dataOffset, dataLen)
+            else -> null
         }
     }
 
