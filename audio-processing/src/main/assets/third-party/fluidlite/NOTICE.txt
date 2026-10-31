@@ -1,0 +1,6 @@
+FluidLite, copyright 2016 Robin Lobel and FluidSynth contributors.
+LGPL-2.1-or-later; see LICENSE.txt and ../libvlc-pcm/COPYING.LIB.txt.
+Sources: https://github.com/divideconcept/FluidLite
+The pinned libVLC-Android 3.7.7 AAR supplies the optional native C API.
+InfiniSound dynamically resolves it; no extra native engine binary is bundled.
+Original adapter source has the containing project license status.

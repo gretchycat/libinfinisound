@@ -1,0 +1,7 @@
+Game Music Emu, copyright Shay Green and contributors.
+LGPL-2.1; see LICENSE.txt. Sources: https://github.com/libgme/game-music-emu
+The pinned libVLC-Android 3.7.7 AAR supplies the optional native C API.
+InfiniSound dynamically resolves it; no extra native engine binary is bundled.
+NSF and similar looping formats use the selected track metadata play length,
+or a 150 second loop window when none is supplied, followed by an 8 second fade.
+This is a rendering policy, not an assertion of an intrinsic file duration.

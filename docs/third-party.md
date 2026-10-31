@@ -30,3 +30,17 @@ All above asset paths are relative to `audio-processing/src/main/assets`.
 The Android bridge builds with CMake/NDK outside Termux; the existing Termux
 source build compiles the bridge for arm64. This does not claim implemented
 Linux, Windows, macOS or iOS backend packaging.
+
+The Android synthesis adapter additionally resolves the pinned AAR's optional
+[FluidLite](https://github.com/divideconcept/FluidLite) and
+[Game Music Emu](https://github.com/libgme/game-music-emu) C interfaces. Their
+original licenses and notices ship in `third-party/fluidlite` and
+`third-party/game-music-emu`. Shared-bank borrowing uses FluidLite's public
+add/remove SoundFont APIs; the resident owner outlives each borrowing synth.
+For unclocked pull decoding, the adapter optionally resolves FFmpeg's public C
+API from the same libVLC binary. Vendored public headers match Termux package
+`ffmpeg 8.1.2-5` (libavutil 60.26.102, libavcodec 62.28.102, libavformat 62.12.102).
+Their original copyright/license comments are retained. ABI mismatch or missing
+symbols falls back to the libVLC public callback adapter; no new codec binary is
+added. Provenance and the LGPL text ship in `third-party/ffmpeg`. Codec objects
+and header types remain private to the native adapter.

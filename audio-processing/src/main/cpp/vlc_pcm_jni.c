@@ -25,6 +25,13 @@ static int (*player_play)(vlc_player *);
 static void (*player_stop)(vlc_player *);
 static void (*player_release)(vlc_player *);
 static int (*player_state)(vlc_player *);
+static int64_t (*player_length)(vlc_player *);
+static vlc_instance *shared_engine;
+static pthread_once_t engine_once = PTHREAD_ONCE_INIT;
+static void create_engine(void) {
+    const char *options[] = {"--ignore-config","--no-video","--no-spu","--no-osd","--no-video-title-show","--no-audio-time-stretch","--intf=dummy","--quiet","--no-metadata-network-access"};
+    shared_engine = vlc_new(sizeof(options)/sizeof(*options),options);
+}
 static void (*audio_callbacks)(vlc_player *,void (*)(void *,const void *,unsigned,int64_t),void (*)(void *,int64_t),void (*)(void *,int64_t),void (*)(void *,int64_t),void (*)(void *),void *);
 static void (*audio_format_callbacks)(vlc_player *,int (*)(void **,char *,unsigned *,unsigned *),void (*)(void *));
 static pthread_once_t api_once = PTHREAD_ONCE_INIT;
@@ -37,6 +44,7 @@ static void load_api(void) {
     SYM(media_callbacks,"libvlc_media_new_callbacks"); SYM(media_option,"libvlc_media_add_option"); SYM(media_release,"libvlc_media_release");
     SYM(player_new,"libvlc_media_player_new_from_media"); SYM(player_play,"libvlc_media_player_play");
     SYM(player_stop,"libvlc_media_player_stop"); SYM(player_release,"libvlc_media_player_release"); SYM(player_state,"libvlc_media_player_get_state");
+    SYM(player_length,"libvlc_media_player_get_length");
     SYM(audio_callbacks,"libvlc_audio_set_callbacks"); SYM(audio_format_callbacks,"libvlc_audio_set_format_callbacks");
 #undef SYM
     api_ready = 1;
@@ -215,7 +223,7 @@ static void destroy(JNIEnv *env, session *s) {
     pthread_mutex_lock(&s->mutex); s->closed = 1;
     pthread_cond_broadcast(&s->changed); pthread_mutex_unlock(&s->mutex);
     if (s->player) { player_stop(s->player); player_release(s->player); }
-    if (s->engine) vlc_release(s->engine);
+    // The shared engine stays resident; players and their input handles are released above.
     if (s->input) (*env)->DeleteGlobalRef(env,s->input);
     pthread_cond_destroy(&s->changed); pthread_mutex_destroy(&s->mutex);
     free(s->queue); free(s);
@@ -240,8 +248,8 @@ JNIEXPORT jlong JNICALL JNI(open)(JNIEnv *env, jobject self, jobject input, jstr
     s->read = (*env)->GetMethodID(env,bytes_class,"readAt","(J[BII)I");
     s->close = (*env)->GetMethodID(env,bytes_class,"close","()V");
     s->queue = malloc(CAPACITY * sizeof(short));
-    const char *options[] = {"--ignore-config","--no-video","--no-spu","--no-osd","--no-video-title-show","--no-audio-time-stretch","--intf=dummy","--quiet","--no-metadata-network-access"};
-    s->engine = vlc_new(sizeof(options)/sizeof(*options),options);
+    pthread_once(&engine_once,create_engine);
+    s->engine = shared_engine;
     if (!s->engine || !s->queue) { destroy(env,s); io_error(env,"libVLC decoder initialization failed"); return 0; }
     vlc_media *media = media_callbacks(s->engine,input_open,input_read,input_seek,input_close,s);
     if (!media) { destroy(env,s); io_error(env,"libVLC media callbacks failed"); return 0; }
@@ -298,4 +306,8 @@ JNIEXPORT jint JNICALL JNI(read)(JNIEnv *env, jobject self, jlong handle, jshort
 JNIEXPORT void JNICALL JNI(close)(JNIEnv *env, jobject self, jlong handle) {
     (void)self;
     destroy(env,(session *)(intptr_t)handle);
+}
+
+JNIEXPORT jlong JNICALL JNI(duration)(JNIEnv *env, jobject self, jlong handle) {
+    (void)env; (void)self; return player_length(((session *)(intptr_t)handle)->player);
 }

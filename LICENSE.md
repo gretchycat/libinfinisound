@@ -17,3 +17,8 @@ compressed losslessly as three consecutive bzip2 asset fragments. Its complete
 COPYING, original README, source URL and original/compressed provenance are in
 `audio-processing/src/main/assets/third-party/fluidr3/`. These notices do not
 change the license status of original InfiniSound code above.
+
+The optional FluidLite/GME/FFmpeg C APIs supplied by the same libVLC binary have
+additional original notices under `third-party/fluidlite`,
+`third-party/game-music-emu` and `third-party/ffmpeg`. Vendored FFmpeg public
+headers retain their original copyright/license comments.

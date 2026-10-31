@@ -27,7 +27,7 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
             layout.buildDirectory.dir("openmptNative").get().asFile, System.getProperty("java.home"))
     }
     val buildVlcPcmNative = tasks.register<Exec>("buildVlcPcmNative") {
-        inputs.files("src/main/cpp/vlc_pcm_jni.c", "src/main/cpp/build-vlc-pcm.sh")
+        inputs.dir("src/main/cpp")
         outputs.dir(layout.buildDirectory.dir("vlcPcmNative"))
         commandLine("sh", file("src/main/cpp/build-vlc-pcm.sh"),
             layout.buildDirectory.dir("vlcPcmNative").get().asFile, System.getProperty("java.home"))

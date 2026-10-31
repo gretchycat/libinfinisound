@@ -9,26 +9,20 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** A real codec backend returning PCM only. libVLC never owns an audio output device. */
 internal object LibVlcPcmDecoder : PcmDecoder {
     override val name = "libVLC.PCM"
-    @Volatile var midiSoundFont: (() -> File)? = null
-    override fun matches(input: AudioInput, probe: AudioProbe): Boolean = probe.bytes.isNotEmpty()
+    override fun matches(input: AudioInput, probe: AudioProbe): Boolean = probe.bytes.isNotEmpty() &&
+        !MidiSequencer.isMidi(probe.bytes) && !GameMusicPcmDecoder.matches(input, probe) &&
+        probe.normalizedExtension !in setOf("sid","ym","dro","imf") &&
+        !(probe.bytes.size >= 4 && String(probe.bytes,0,4,Charsets.US_ASCII) in setOf("PSID","RSID"))
     override fun open(input: AudioInput): PcmStream = Stream(input, null)
 
-    object Midi : PcmDecoder {
-        override val name = "libVLC.FluidLite"
-        override fun matches(input: AudioInput, probe: AudioProbe) = midiSoundFont != null && MidiSequencer.isMidi(probe.bytes)
-        override fun open(input: AudioInput): PcmStream {
-            val font = midiSoundFont?.invoke() ?: throw IOException("No MIDI SoundFont configured")
-            if (!font.isFile || !font.canRead()) throw IOException("MIDI SoundFont is unreadable")
-            return Stream(input, font)
-        }
-    }
+    fun inspectDuration(input: AudioInput): Long? = Stream(input, null, 2_000_000_000L).use { it.duration() }
 
-    private class Stream(input: AudioInput, font: File?) : PcmStream {
+    private class Stream(input: AudioInput, font: File?, private val startupTimeout: Long = 15_000_000_000L) : PcmStream {
         private val closed = AtomicBoolean(false)
         private val lock = Any()
         private var handle = 0L
         private val buffer = ShortArray(32768)
-        override val decoderName = if (font == null) name else "${Midi.name}(${font.nameWithoutExtension})"
+        override val decoderName = if (font == null) name else "${MidiPcmDecoder.name}(${font.nameWithoutExtension})"
         override val sourceFormat: String? = if (font == null) null else "MIDI"
         override val format: PcmFormat
         init {
@@ -40,13 +34,14 @@ internal object LibVlcPcmDecoder : PcmDecoder {
                 do {
                     checkOpen()
                     encoded = synchronized(lock) { LibVlcPcmNative.format(handle) }
-                    if (System.nanoTime() - started > 15_000_000_000L) throw IOException("libVLC decoded no audio within 15 seconds")
+                    if (System.nanoTime() - started > startupTimeout) throw IOException("libVLC audio inspection timed out")
                 } while (encoded == 0L)
                 // Container duration is an estimate, not an exact PCM frame count.
                 // Unknown totals use the existing explicit PCM preparation path.
                 format = PcmFormat((encoded ushr 8).toInt(), (encoded and 255).toInt())
             } catch (error: Throwable) { close(); throw error }
         }
+        fun duration(): Long? = synchronized(lock) { LibVlcPcmNative.duration(handle).takeIf { it > 0 } }
         private fun checkOpen() {
             if (closed.get() || Thread.currentThread().isInterrupted) throw InterruptedIOException("libVLC PCM decoding cancelled")
         }
@@ -85,8 +80,10 @@ internal object LibVlcPcmNative {
         System.loadLibrary("vlc")
         System.loadLibrary("infinivlcpcm")
     }
+    fun ensureLoaded() {}
     external fun open(input: AudioInput, soundFont: String?): Long
     external fun format(handle: Long): Long
+    external fun duration(handle: Long): Long
     external fun read(handle: Long, samples: ShortArray, length: Int): Int
     external fun close(handle: Long)
 }

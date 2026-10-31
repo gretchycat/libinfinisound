@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(infinivlcpcm C)
-add_library(infinivlcpcm SHARED vlc_pcm_jni.c)
-target_link_libraries(infinivlcpcm dl)
+add_library(infinivlcpcm SHARED vlc_pcm_jni.c native_synthesis.c av_pcm_jni.c)
+target_include_directories(infinivlcpcm PRIVATE third_party/ffmpeg/include)
+target_link_libraries(infinivlcpcm dl m)
 target_link_options(infinivlcpcm PRIVATE "-Wl,-z,max-page-size=16384")

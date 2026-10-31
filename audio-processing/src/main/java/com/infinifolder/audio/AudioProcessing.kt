@@ -9,16 +9,16 @@ import java.io.File
 
 /** Default codec composition. It has no dependency on a viewer, storage runtime or audio output. */
 object AudioProcessing : AudioProcessor {
-    private val files = AudioFileProcessor(listOf(AndroidPcmDecoder), listOf(LibVlcPcmDecoder), listOf(LibVlcPcmDecoder.Midi))
+    private val files = AudioFileProcessor(listOf(AndroidPcmDecoder), listOf(LibVlcAvDecoder, LibVlcPcmDecoder), listOf(MidiPcmDecoder, GameMusicPcmDecoder))
     private val platformExtensions = setOf("ogg", "oga", "opus", "mka", "weba", "mp4", "amr", "awb", "wma", "ra", "ape", "ac3", "dts", "tta", "mlp", "thd", "eac3", "wv", "a52")
     val supportedExtensions: Set<String> get() = PortableAudioProcessing.supportedExtensions + platformExtensions
     val metadata: AudioMetadataReader = AndroidAudioMetadataReader
 
     /** Configure a caller-owned font, or lazily install the bundled font from Android assets. */
-    fun setMidiSoundFont(file: File) { LibVlcPcmDecoder.midiSoundFont = { file } }
+    fun setMidiSoundFont(file: File) { MidiPcmDecoder.soundFont = { file } }
     fun initialize(context: Context) {
         val app = context.applicationContext
-        LibVlcPcmDecoder.midiSoundFont = { BundledMidiSoundFont.file(app) }
+        MidiPcmDecoder.soundFont = { BundledMidiSoundFont.file(app) }
     }
 
     override fun isSupported(probe: AudioProbe): Boolean = PortableAudioProcessing.isSupported(probe) || probe.normalizedExtension in platformExtensions
@@ -66,7 +66,7 @@ object AudioProcessing : AudioProcessor {
     /** The host stages only when a legacy renderer requires a file/companion-file context. */
     fun requiresLocalFileForPlayback(source: io.github.gretchycat.infinistream.SourceResource): Boolean {
         val probe = StreamAudioInput(source).probe()
-        if (LibVlcPcmDecoder.midiSoundFont != null && com.infinifolder.audio.tracker.MidiSequencer.isMidi(probe.bytes)) return false
+        if (MidiPcmDecoder.soundFont != null && com.infinifolder.audio.tracker.MidiSequencer.isMidi(probe.bytes)) return false
         return PortableAudioProcessing.prefersBufferedDecode(probe)
     }
 
@@ -96,10 +96,52 @@ object AudioProcessing : AudioProcessor {
         fallbackName: String = "", durationMs: Long = 0L): AudioFormatInfo =
         AndroidAudioMetadataReader.probeFormat(source, fallbackName, durationMs)
 
-    fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean = false): AudioTags =
-        StreamAudioInput(source).open().use { bytes ->
-            metadata.readTags(AudioMetadataSource.Seekable(bytes.size, bytes::readAt), includeArtwork)
+    fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean = false): AudioTags {
+        val delegate = StreamAudioInput(source)
+        val caller = Thread.currentThread()
+        val deadline = System.nanoTime() + 3_000_000_000L
+        val input = object : AudioInput {
+            override val name = delegate.name
+            override fun open(): AudioBytes {
+                val bytes = delegate.open()
+                return object : AudioBytes by bytes {
+                    override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int {
+                        if (caller.isInterrupted) throw java.io.InterruptedIOException("Audio metadata cancelled")
+                        if (System.nanoTime() > deadline) throw java.io.IOException("Audio metadata inspection timed out")
+                        return bytes.readAt(position,buffer,offset,length)
+                    }
+                }
+            }
         }
+        val probe = input.probe()
+        // Android cannot inspect these event/emulation formats. Timing does not need PCM or a bank.
+        if (com.infinifolder.audio.tracker.MidiSequencer.isMidi(probe.bytes))
+            return AudioTags(null,null,null,com.infinifolder.audio.midi.MidiTimeline.read(input).durationMs.toString())
+        if (GameMusicPcmDecoder.matches(input,probe))
+            return AudioTags(null,null,null,GameMusicPcmDecoder.open(input).use { it.format.durationMs?.toString() })
+        val tags = runCatching { input.open().use { bytes ->
+            metadata.readTags(AudioMetadataSource.Seekable(bytes.size, bytes::readAt), includeArtwork)
+        } }.getOrElse { AudioTags(null,null,null,null) }
+        if ((tags.duration?.toLongOrNull() ?: 0) > 0) return tags
+        return tags.copy(duration = inspectDuration(input)?.toString())
+    }
+
+    private fun inspectDuration(input: AudioInput): Long? {
+        PortableAudioDuration.read(input)?.let { return it }
+        val probe = input.probe()
+        if (GameMusicPcmDecoder.matches(input,probe)) return GameMusicPcmDecoder.open(input).use { it.format.durationMs }
+        if (probe.normalizedExtension in platformExtensions) {
+            try { return LibVlcAvDecoder.inspectDuration(input) }
+            catch (cancel: java.io.InterruptedIOException) { throw cancel }
+            catch (_: Exception) { }
+            catch (_: LinkageError) { }
+            return LibVlcPcmDecoder.inspectDuration(input)
+        }
+        return null
+    }
+
+    fun readDuration(source: io.github.gretchycat.infinistream.SourceResource): Long =
+        readTags(source).duration?.toLongOrNull() ?: 0L
 
     fun prepareForOutput(
         source: File,
@@ -109,9 +151,6 @@ object AudioProcessing : AudioProcessor {
         cancelled: () -> Boolean = { false }
     ): AudioPreparation = files.prepare(FileAudioInput(source), destination, preference, observer, cancelled)
 
-    fun readDuration(file: File): Long {
-        runCatching { metadata.readTags(AudioMetadataSource.LocalFile(file)).duration?.toLongOrNull() }
-            .getOrNull()?.takeIf { it > 0 }?.let { return it }
-        return files.durationMs(FileAudioInput(file))
-    }
+    /** Metadata/timeline inspection only; never render a song to calculate its playlist length. */
+    fun readDuration(file: File): Long = readDuration(io.github.gretchycat.infinistream.FileSourceResource(file))
 }

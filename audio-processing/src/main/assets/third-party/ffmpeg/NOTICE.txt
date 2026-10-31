@@ -1,0 +1,10 @@
+FFmpeg public headers: copyright the FFmpeg developers (see each header).
+Source: https://ffmpeg.org/ ; https://github.com/FFmpeg/FFmpeg
+Header snapshot from Termux ffmpeg package 8.1.2-5.
+libavutil 60.26.102; libavcodec 62.28.102; libavformat 62.12.102.
+Headers retain their original license notices, generally LGPL-2.1-or-later.
+The adapter dynamically resolves the FFmpeg API already exported by the pinned
+libVLC binary; no additional engine binary is bundled. It verifies the exact
+AVClass/public-header version before accessing codec structs. Missing symbols
+or ABI mismatch select the existing libVLC callback compatibility backend.
+Vendored headers: audio-processing/src/main/cpp/third_party/ffmpeg/include.

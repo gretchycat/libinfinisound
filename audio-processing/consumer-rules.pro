@@ -5,3 +5,8 @@
 -keep class com.infinifolder.audio.LibVlcPcmNative { *; }
 -keep interface com.infinifolder.audio.AudioInput { *; }
 -keep interface com.infinifolder.audio.AudioBytes { *; }
+
+-keep class com.infinifolder.audio.FluidLiteNative { *; }
+-keep class com.infinifolder.audio.GameMusicNative { *; }
+
+-keep class com.infinifolder.audio.LibVlcAvNative { *; }

@@ -122,7 +122,7 @@ The Android composition registers libVLC 3.7.7 as an additional `PcmDecoder` aft
 existing codecs. MP3/FLAC selection, exact positioning and linked output retain
 their existing paths. libVLC accepts the same reopenable `AudioInput` interface,
 uses bounded positional input reads and returns signed 16-bit decoded PCM through
-`PcmStream`. Native PCM callbacks feed a bounded queue; no libVLC device output,
+`PcmStream`. Compatibility PCM callbacks feed a bounded queue; no libVLC device output,
 video surface, network source URL or caller-owned encoded-file staging is used.
 A source must actually yield decoded audio before it is accepted. Invalid sources
 still reject. The code depends on the upstream libVLC artifact, not InfiniVideo;
@@ -138,9 +138,13 @@ Call `AudioProcessing.initialize(context)` to enable the bundled FluidR3_GM
 bank for MIDI. First MIDI use streams the three consecutive bz2 asset fragments
 to one private, atomically published, SHA-256-verified SF2 file. Original SF2:
 148,398,306 bytes; compressed assets: 118,540,984 bytes. Java never holds the entire
-SF2 byte array. Later uses reuse the verified cache. The preferred libVLC
-FluidLite backend interprets actual GM presets, note programs and channel-10
-percussion. Core/portable-only synthesis remains separately available. A caller
+SF2 byte array. Later uses reuse the verified disk cache. The native FluidLite
+adapter keeps the loaded bank resident for the process lifetime, with separate
+synthesizer/voice state per stream. All calls touching the shared bank are
+serialized; closing one stream does not unload the bank used by another.
+The portable SMF 0/1 and RMID timeline parser supplies a finite frame total
+(including a two-second release tail), so MIDI PCM is rendered lazily in blocks.
+FluidLite interprets actual GM presets, note programs and channel-10 percussion. Core/portable-only synthesis remains separately available. A caller
 may instead configure a caller-owned SF2 file with `setMidiSoundFont(file)`;
 diagnostics identify the supplied filename, rather than claiming the bundled bank.
 
@@ -148,3 +152,34 @@ LibVLC, FluidR3 and bzip2 dependencies retain their licenses/notices and pinned
 source references; see `docs/third-party.md`. Outside Termux the callback bridge
 has an Android CMake/NDK build. The Termux build packages its arm64 bridge. No
 native desktop/iOS binding or full codec-conformance guarantee is claimed.
+
+## Audio loading and playlist timing
+
+`AudioProcessing.readDuration` and common-source `readTags` inspect metadata or
+parsed event timing; they never start unbounded full-track rendering to calculate
+a duration. Untimed native files at most 64 KiB may be counted within ten seconds
+of PCM and a 250 ms work budget; otherwise timing stays unknown.
+MIDI timing does not load the sound bank. Portable codecs and libopenmpt provide
+known timing where available; native fallback inspection opens only enough PCM
+to identify the stream and read its duration, with a startup deadline. Missing
+timing stays unknown. Container estimates remain distinct from exact PCM totals.
+
+The preferred native adapter directly pulls frames through the FFmpeg C API
+already exported by the pinned libVLC binary. It explicitly drains the codec at
+encoded EOF and has no player/presentation clock. Public headers are bundled,
+and the exact header ABI is checked before accessing codec structs. If that API
+is unavailable, the original libVLC callback decoder remains a compatibility
+fallback. Unknown-length formats still need a complete PCM spool for WAVE
+publication; the direct adapter prepares it without playback timestamp pacing.
+Existing MP3/FLAC selection and positioned caching are retained.
+
+The optional GME C API in the pinned AAR provides actual NSF/NSFE, SPC and related
+game-music emulation. The selected/default track uses its reported playback
+length, or 150 seconds for an untimed loop, then an eight-second fade. This
+explicit finite rendering policy enables lazy PCM without claiming an intrinsic
+duration for endless music. Malformed inputs fail through the common decoder
+contract. Other formats still require a real registered decoder.
+
+The optional FluidLite/GME symbols are resolved at runtime and fail explicitly
+when absent from a replacement AAR. Portable-only policy excludes these native
+backends. Desktop/iOS packaging is still separate work.

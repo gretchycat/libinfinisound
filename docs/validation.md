@@ -119,3 +119,18 @@ same-pitch piano/percussion samples, and reuses the cached bank with no partial
 file left over. MIDI labels identify the actual configured bank filename.
 The consuming checkpoint records exact APK checksums and native results. Handset
 sound, skipped-queue behavior and archive/provider acceptance remain separate.
+
+## Loading and resident-bank correction (checkpoint 25)
+
+Full app/audio-host compilation and focused owner-file loading diagnostics are
+recorded by the consuming application's checkpoint 25. Three owner-provided
+ambient MIDI files use parsed timing and lazy FluidLite PCM. The bank load counter
+remains one across repeated and overlapping streams. NSF uses actual GME emulation
+with a finite rendering window. General native formats can use the FFmpeg API in
+the same libVLC binary with explicit codec EOF draining and no playback clock;
+API/ABI mismatch retains the public libVLC callback compatibility route.
+
+These are loading diagnostics and successful builds, not a new complete regression
+suite run or handset/audible acceptance. The preceding 100-case core and 885-case
+consumer gate results remain historical evidence. No new automated test cases
+were added for this checkpoint.
