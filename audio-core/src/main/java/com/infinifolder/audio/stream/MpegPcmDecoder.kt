@@ -54,7 +54,7 @@ object MpegPcmDecoder : PcmDecoder {
         } catch (error: Throwable) { if (stream == null) bytes.close() else stream.close(); throw error }
     }
     private class MpegStream(source: AudioBytes) : BlockPcmStream() {
-        private val input = BufferedInputStream(AudioInputStream(source), 65536)
+        private val input = BufferedInputStream(AudioInputStream(MpegAudioBytes(source)), 65536)
         private val bitstream = Bitstream(input)
         private val decoder = Decoder()
         private var rate = 0
