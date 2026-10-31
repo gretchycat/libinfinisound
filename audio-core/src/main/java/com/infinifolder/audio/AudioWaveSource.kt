@@ -10,7 +10,7 @@ class AudioWaveSource internal constructor(@Volatile private var source: ByteSou
     preparation: AudioPreparation, progressive: Boolean,
     private val origin: StreamMetadata = StreamMetadata(),
     private val onClose: () -> Unit = {},
-    private var recover: (() -> Pair<ByteSource, AudioPreparation>)? = null
+    private var recover: ((IOException) -> Pair<ByteSource, AudioPreparation>)? = null
 ) : ByteSource, PositionalReadable {
     @Volatile var preparation = preparation
         private set
@@ -19,7 +19,7 @@ class AudioWaveSource internal constructor(@Volatile private var source: ByteSou
     private val closed = AtomicBoolean(false)
     private val lock = Any()
     private var cursor = 0L
-    override val metadata get() = pcmWaveMetadata(origin, preparation.format, progressive)
+    override val metadata get() = if (progressive) source.metadata else pcmWaveMetadata(origin, preparation.format, false)
 
     override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int = synchronized(lock) {
         requireRange(position, buffer, offset, length)
@@ -31,7 +31,7 @@ class AudioWaveSource internal constructor(@Volatile private var source: ByteSou
             val retry = recover ?: throw error
             recover = null
             source.close()
-            val (replacement, result) = retry()
+            val (replacement, result) = retry(error)
             if (result.format != preparation.format) {
                 replacement.close()
                 throw IOException("Fallback decoder changed the negotiated PCM format", error)
@@ -62,6 +62,7 @@ class AudioWaveSource internal constructor(@Volatile private var source: ByteSou
             override fun close() { viewClosed = true }
         }
     }
+
 
     override fun close() {
         // PcmWaveSource sees cancellation immediately, before we wait for its current read.

@@ -25,6 +25,12 @@ interface PcmStream : AutoCloseable {
     fun read(samples: IntArray, offset: Int, length: Int): Int
 }
 
+/** Optional exact output-frame positioning. Seeking changes only this decoder's cursor. */
+interface FrameSeekablePcmStream : PcmStream {
+    /** Subsequent reads start at this frame in the trimmed, decoded output timeline. */
+    fun seekToFrame(frame: Long)
+}
+
 /** A platform or portable codec implementation; output and source staging belong to its host. */
 interface PcmDecoder {
     val name: String

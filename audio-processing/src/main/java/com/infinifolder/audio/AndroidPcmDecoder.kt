@@ -9,6 +9,7 @@ import com.infinifolder.audio.stream.BlockPcmStream
 import com.infinifolder.audio.stream.FileAudioInput
 import com.infinifolder.audio.stream.TrimmedPcmStream
 import com.infinifolder.audio.stream.AudioStreamTiming
+import com.infinifolder.audio.stream.MpegFrameIndex
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.nio.ByteBuffer
@@ -71,6 +72,24 @@ internal object AndroidPcmDecoder : PcmDecoder {
             val timing = AudioStreamTiming.read(input,stream.format.sampleRate)
             val leading = if (hasDelay) delay.toLong() else timing?.leadingFrames ?: 0L
             val limit = timing?.totalFrames
+            if (limit != null) return object : FrameSeekablePcmStream {
+                private val mpeg = if (mime == "audio/mpeg") MpegFrameIndex(input, stream.format.sampleRate) else null
+                private var output: PcmStream = TrimmedPcmStream(stream, leading, padding, limit)
+                override val format = output.format
+                override val decoderName get() = stream.decoderName
+                override fun read(samples: IntArray, offset: Int, length: Int) = output.read(samples, offset, length)
+                override fun seekToFrame(frame: Long) {
+                    require(frame in 0..limit)
+                    if (mpeg == null) stream.seekToFrame(frame + leading)
+                    else {
+                        val anchor = mpeg.before((frame + leading - stream.format.sampleRate).coerceAtLeast(0L))
+                        if (anchor.frame == 0L) stream.restartMpeg(input, frame + leading)
+                        else stream.restartMpeg(mpeg.inputFrom(anchor), frame + leading + anchor.headerFrames - anchor.frame)
+                    }
+                    output = TrimmedPcmStream(stream, paddingFrames = padding, totalFrames = limit - frame)
+                }
+                override fun close() = stream.close()
+            }
             return if (leading != 0L || padding != 0 || limit != null)
                 TrimmedPcmStream(stream,leading,padding,limit) else stream
         } catch (error: Throwable) {
@@ -83,9 +102,9 @@ internal object AndroidPcmDecoder : PcmDecoder {
     private fun MediaFormat.intOr(key: String, default: Int): Int = if (containsKey(key)) getInteger(key) else default
 
     private class AndroidStream(
-        private val extractor: MediaExtractor,
+        private var extractor: MediaExtractor,
         private val codec: MediaCodec?,
-        private val source: MediaDataSource?,
+        private var source: MediaDataSource?,
         input: MediaFormat
     ) : BlockPcmStream() {
         private var rate = input.getInteger(MediaFormat.KEY_SAMPLE_RATE)
@@ -96,6 +115,9 @@ internal object AndroidPcmDecoder : PcmDecoder {
         private val info = MediaCodec.BufferInfo()
         private val raw = if (codec == null) ByteBuffer.allocateDirect(maxOf(262144, input.intOr(MediaFormat.KEY_MAX_INPUT_SIZE, 0)).coerceAtMost(16 * 1024 * 1024)) else null
         private var initialized = false
+        private var firstTimestampUs: Long? = null
+        private var blockTimestampUs = 0L
+        private var seekFrame: Long? = null
         private var pending: IntArray? = decodeBlock() ?: throw IOException("Android decoded no audio")
         override val format = PcmFormat(rate, channels, bitsPerSample = when (encoding) {
             AudioFormat.ENCODING_PCM_24BIT_PACKED -> 24
@@ -105,9 +127,52 @@ internal object AndroidPcmDecoder : PcmDecoder {
         val precisionBits: Int get() = if (encoding == AudioFormat.ENCODING_PCM_FLOAT) 24 else format.bitsPerSample
         override val decoderName = AndroidPcmDecoder.name
         override fun nextBlock(): IntArray? {
-            val first = pending
-            if (first != null) { pending = null; return first }
-            return decodeBlock()
+            while (true) {
+                val block = pending?.also { pending = null } ?: decodeBlock() ?: return null
+                val target = seekFrame ?: return block
+                val start = Math.round((blockTimestampUs - firstTimestampUs!!) * rate / 1_000_000.0)
+                if (start > target) throw IOException("Android seek skipped the requested PCM frame")
+                val skip = target - start
+                if (skip >= block.size / channels) continue
+                seekFrame = null
+                return block.copyOfRange(skip.toInt() * channels, block.size)
+            }
+        }
+        fun seekToFrame(frame: Long) {
+            require(frame >= 0)
+            clearDecodedBlock(); pending = null
+            // Preroll restores reservoir/filterbank/overlap state before requested output.
+            val preroll = (frame - rate.toLong()).coerceAtLeast(0)
+            val timeUs = firstTimestampUs!! + preroll * 1_000_000L / rate
+            extractor.seekTo(timeUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            codec?.flush()
+            inputEnded = false; outputEnded = false; seekFrame = frame
+        }
+        fun restartMpeg(input: AudioInput, skipFrames: Long) {
+            val bytes = input.open()
+            val replacement = try { MediaExtractor() } catch (error: Throwable) { bytes.close(); throw error }
+            val adapter = object : MediaDataSource() {
+                override fun getSize() = bytes.size
+                override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int) = bytes.readAt(position, buffer, offset, size)
+                override fun close() = bytes.close()
+            }
+            try {
+                replacement.setDataSource(adapter)
+                val track = (0 until replacement.trackCount).firstOrNull {
+                    replacement.getTrackFormat(it).getString(MediaFormat.KEY_MIME) == "audio/mpeg"
+                } ?: throw IOException("No MPEG track at indexed anchor")
+                replacement.selectTrack(track)
+                extractor.release(); source?.close()
+                extractor = replacement; source = adapter
+                codec?.flush()
+                clearDecodedBlock(); pending = null
+                inputEnded = false; outputEnded = false
+                firstTimestampUs = null; seekFrame = skipFrames
+            } catch (error: Throwable) { replacement.release(); adapter.close(); throw error }
+        }
+        private fun recordTimestamp(timeUs: Long) {
+            blockTimestampUs = timeUs
+            if (firstTimestampUs == null) firstTimestampUs = timeUs
         }
         private fun decodeBlock(): IntArray? {
             if (outputEnded) return null
@@ -117,6 +182,7 @@ internal object AndroidPcmDecoder : PcmDecoder {
                 buffer.clear()
                 val count = extractor.readSampleData(buffer, 0)
                 if (count < 0) { outputEnded = true; return null }
+                recordTimestamp(extractor.sampleTime)
                 buffer.position(0); buffer.limit(count)
                 val result = convert(buffer.order(ByteOrder.LITTLE_ENDIAN))
                 extractor.advance()
@@ -126,23 +192,27 @@ internal object AndroidPcmDecoder : PcmDecoder {
             while (!outputEnded) {
                 if (Thread.currentThread().isInterrupted) throw InterruptedIOException("Android audio decode cancelled")
                 if (System.nanoTime() - progressAt > 15_000_000_000L) throw IOException("Android audio decoder stalled")
-                if (!inputEnded) {
-                    val index = decoder.dequeueInputBuffer(10000)
-                    if (index >= 0) {
-                        val buffer = decoder.getInputBuffer(index) ?: throw IOException("Missing Android codec input buffer")
-                        buffer.clear()
-                        val count = extractor.readSampleData(buffer, 0)
-                        if (count < 0) {
-                            decoder.queueInputBuffer(index, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputEnded = true
-                        } else {
-                            decoder.queueInputBuffer(index, 0, count, extractor.sampleTime, 0)
-                            extractor.advance()
-                        }
-                        progressAt = System.nanoTime()
+                var queued = false
+                // Feed available buffers without blocking behind output waiting to be drained.
+                // Waiting for input while output is ready stalls bulk PCM reads after a seek.
+                for (attempt in 0 until 8) {
+                    if (inputEnded) break
+                    val index = decoder.dequeueInputBuffer(0)
+                    if (index < 0) break
+                    val buffer = decoder.getInputBuffer(index) ?: throw IOException("Missing Android codec input buffer")
+                    buffer.clear()
+                    val count = extractor.readSampleData(buffer, 0)
+                    if (count < 0) {
+                        decoder.queueInputBuffer(index, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        inputEnded = true
+                    } else {
+                        decoder.queueInputBuffer(index, 0, count, extractor.sampleTime, 0)
+                        extractor.advance()
                     }
+                    progressAt = System.nanoTime()
+                    queued = true
                 }
-                val output = decoder.dequeueOutputBuffer(info, 10000)
+                val output = decoder.dequeueOutputBuffer(info, if (queued) 0 else 10000)
                 if (output == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     val f = decoder.outputFormat
                     val newRate = f.intOr(MediaFormat.KEY_SAMPLE_RATE, rate)
@@ -159,6 +229,7 @@ internal object AndroidPcmDecoder : PcmDecoder {
                             val buffer = decoder.getOutputBuffer(output) ?: throw IOException("Missing Android codec output buffer")
                             buffer.position(info.offset); buffer.limit(info.offset + info.size)
                             initialized = true
+                            recordTimestamp(info.presentationTimeUs)
                             return convert(buffer.slice().order(ByteOrder.LITTLE_ENDIAN))
                         }
                     } finally { decoder.releaseOutputBuffer(output, false) }
@@ -176,14 +247,23 @@ internal object AndroidPcmDecoder : PcmDecoder {
                 else -> throw IOException("Unsupported Android PCM encoding: $encoding")
             }
             if (channels !in 1..8 || buffer.remaining() % (width * channels) != 0) throw IOException("Incomplete Android PCM frame")
-            return IntArray(buffer.remaining() / width) {
+            val count = buffer.remaining() / width
+            // Bulk view reads avoid a JNI-backed DirectByteBuffer access for every sample.
+            if (encoding == AudioFormat.ENCODING_PCM_16BIT) {
+                val values = ShortArray(count); buffer.asShortBuffer().get(values)
+                return IntArray(count) { values[it].toInt() shl 16 }
+            }
+            if (encoding == AudioFormat.ENCODING_PCM_32BIT) return IntArray(count).also { buffer.asIntBuffer().get(it) }
+            if (encoding == AudioFormat.ENCODING_PCM_FLOAT) {
+                val values = FloatArray(count); buffer.asFloatBuffer().get(values)
+                return IntArray(count) { (values[it].toDouble().coerceIn(-1.0, 1.0) * 2147483648.0).toLong().coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt() }
+            }
+            val values = ByteArray(buffer.remaining()); buffer.get(values)
+            return IntArray(count) { i ->
                 when (encoding) {
-                    AudioFormat.ENCODING_PCM_8BIT -> ((buffer.get().toInt() and 255) - 128) shl 24
-                    AudioFormat.ENCODING_PCM_16BIT -> buffer.short.toInt() shl 16
-                    AudioFormat.ENCODING_PCM_FLOAT -> (buffer.float.toDouble().coerceIn(-1.0, 1.0) * 2147483648.0).toLong().coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
-                    AudioFormat.ENCODING_PCM_32BIT -> buffer.int
+                    AudioFormat.ENCODING_PCM_8BIT -> ((values[i].toInt() and 255) - 128) shl 24
                     else -> {
-                        val value = (buffer.get().toInt() and 255) or ((buffer.get().toInt() and 255) shl 8) or (buffer.get().toInt() shl 16)
+                        val value = (values[i * 3].toInt() and 255) or ((values[i * 3 + 1].toInt() and 255) shl 8) or (values[i * 3 + 2].toInt() shl 16)
                         value shl 8
                     }
                 }

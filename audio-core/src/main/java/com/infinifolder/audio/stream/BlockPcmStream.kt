@@ -6,6 +6,7 @@ import com.infinifolder.audio.PcmStream
 abstract class BlockPcmStream : PcmStream {
     private var block = IntArray(0)
     private var position = 0
+    protected fun clearDecodedBlock() { block = IntArray(0); position = 0 }
     protected abstract fun nextBlock(): IntArray?
     final override fun read(samples: IntArray, offset: Int, length: Int): Int {
         require(offset >= 0 && length >= 0 && offset <= samples.size - length)

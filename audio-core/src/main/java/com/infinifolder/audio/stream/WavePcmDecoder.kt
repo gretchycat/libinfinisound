@@ -12,12 +12,13 @@ object WavePcmDecoder : PcmDecoder {
         val source = input.open()
         try { return WaveStream(ByteReader(source)) } catch (error: Throwable) { source.close(); throw error }
     }
-    private class WaveStream(private val r: ByteReader) : BlockPcmStream() {
+    private class WaveStream(private val r: ByteReader) : BlockPcmStream(), FrameSeekablePcmStream {
         override val format: PcmFormat
         private val depth: Int
         private val tag: Int
         private var position: Long
         private val end: Long
+        private val dataStart: Long
         init {
             if (r.text(0, 4) != "RIFF" || r.text(8, 4) != "WAVE") throw IOException("Missing RIFF WAVE signature")
             var pos = 12L
@@ -49,8 +50,13 @@ object WavePcmDecoder : PcmDecoder {
             if (tag !in setOf(1, 3) || depth !in setOf(8, 16, 24, 32) || (tag == 3 && depth != 32) || dataOffset < 0)
                 throw IOException("Unsupported WAVE PCM format")
             if (channels !in 1..8 || dataLength % (channels * (depth / 8)) != 0L) throw IOException("Incomplete WAVE PCM frame")
-            position = dataOffset; end = dataOffset + dataLength
+            dataStart = dataOffset; position = dataOffset; end = dataOffset + dataLength
             format = PcmFormat(rate, channels, dataLength / (channels * (depth / 8)), if (depth <= 16) 16 else depth)
+        }
+        override fun seekToFrame(frame: Long) {
+            require(frame in 0..format.totalFrames!!)
+            clearDecodedBlock()
+            position = dataStart + frame * format.channels * (depth / 8)
         }
         override fun nextBlock(): IntArray? {
             if (position >= end) return null

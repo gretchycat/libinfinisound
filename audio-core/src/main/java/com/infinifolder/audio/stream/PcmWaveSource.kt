@@ -8,8 +8,8 @@ import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Explicit host-owned disk cache of decoded PCM. Only requested prefixes are decoded;
- * backwards reads reuse the cache, while a forward seek may decode intervening frames.
+ * Explicit host-owned disk cache of decoded PCM. Seek-capable decoders fill independent
+ * frame blocks; other decoders retain prefix decoding. Cached blocks are never decoded again.
  * No sparse/undecoded bytes are exposed as silence. Close releases the codec/cache handle;
  * the host retains ownership of the scratch file and the encoded resource's lease.
  */
@@ -24,7 +24,16 @@ class PcmWaveSource internal constructor(
     private val width = format.bitsPerSample / 8
     private val frames = format.totalFrames ?: throw IOException("An exact PCM length is required")
     private val dataLength: Long
-    override val metadata: StreamMetadata
+    private val description: StreamMetadata
+    @Volatile private var cachedBytes = 44L
+    override val metadata get() = description.copy(attributes = description.attributes + mapOf(
+        "cachedPcmBytes" to cachedBytes.toString(), "decoderFrameSeeks" to frameSeeks.toString()))
+    @Volatile private var frameSeeks = 0L
+    private val seeker = pcm as? FrameSeekablePcmStream
+    private val blocks = java.util.BitSet()
+    private var cachedBlocks = 0L
+    private var decoderFrame = 0L
+    private val blockFrames = 4096L
     private val file: RandomAccessFile
     private val closed = AtomicBoolean(false)
     private val lock = Any()
@@ -41,7 +50,11 @@ class PcmWaveSource internal constructor(
         if (frames <= 0 || frames > (0xffffffffL - 36) / (format.channels * width))
             throw IOException("PCM exceeds RIFF WAVE size limit or is empty")
         dataLength = frames * format.channels * width
-        metadata = pcmWaveMetadata(inputMetadata, format, true)
+        description = pcmWaveMetadata(inputMetadata, format, true).let { base ->
+            if (seeker == null) base else base.copy(attributes = base.attributes + mapOf(
+                "access" to "decoded-block-disk-cache", "forwardSeek" to "decoder-frame-seek",
+                "cacheBlockFrames" to blockFrames.toString()))
+        }
         file = RandomAccessFile(scratch, "rw")
         try {
             file.setLength(0)
@@ -52,7 +65,7 @@ class PcmWaveSource internal constructor(
             le32(format.sampleRate.toLong() * format.channels * width); le16(format.channels * width); le16(format.bitsPerSample)
             file.writeBytes("data"); le32(dataLength)
             // Validate the first decoded block before publishing a lazy source to its consumer.
-            decodeThrough(minOf(44 + dataLength, 44 + bytes.size.toLong()))
+            if (seeker == null) decodeThrough(minOf(44 + dataLength, 44 + bytes.size.toLong())) else decodeBlock(0)
         } catch (error: Throwable) { file.close(); throw error }
     }
 
@@ -77,6 +90,7 @@ class PcmWaveSource internal constructor(
             }
             file.seek(available); file.write(bytes, 0, count * width)
             available += count * width
+            cachedBytes = available
             metrics.add(samples, count)
         }
         if (!finished && available == 44 + dataLength) {
@@ -88,20 +102,58 @@ class PcmWaveSource internal constructor(
         }
     }
 
+    private fun decodeBlock(index: Int) {
+        if (blocks[index]) return
+        checkOpen()
+        val frame = index * blockFrames
+        if (decoderFrame != frame) { frameSeeks++; seeker!!.seekToFrame(frame) }
+        val wanted = minOf(blockFrames, frames - frame).toInt() * format.channels
+        var count = 0
+        while (count < wanted) {
+            checkOpen()
+            val n = pcm.read(samples, count, wanted - count)
+            if (n <= 0 || n > wanted - count || n % format.channels != 0)
+                throw IOException("Incomplete or invalid positioned PCM read: $n")
+            count += n
+        }
+        checkOpen()
+        decoderFrame = frame + wanted / format.channels
+        if (decoderFrame == frames && pcm.read(IntArray(format.channels), 0, format.channels) != -1)
+            throw IOException("Decoder exceeded its exact PCM length")
+        for (i in 0 until count) {
+            val value = samples[i] ushr (32 - format.bitsPerSample)
+            repeat(width) { bytes[i * width + it] = (value ushr (it * 8)).toByte() }
+        }
+        file.seek(44 + frame * format.channels * width); file.write(bytes, 0, count * width)
+        metrics.add(samples, count)
+        blocks.set(index); cachedBytes += count * width; cachedBlocks++
+        if (cachedBlocks == (frames + blockFrames - 1) / blockFrames) {
+            finished = true; closePcm()
+            completed(AudioPreparation(format, pcm.decoderName ?: "PCM", pcm.sourceFormat, metrics.finish(format)))
+        }
+    }
+
     override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int = synchronized(lock) {
         requireRange(position, buffer, offset, length); checkOpen()
         if (length == 0) return@synchronized 0
         if (position >= 44 + dataLength) return@synchronized -1
-        // Short reads bound each returned block. Seeking forward still requires decoding its prefix.
+        // Short reads bound work per request; indexed reads fill only covered frame blocks.
         val count = minOf(length.toLong(), 64 * 1024L, 44 + dataLength - position).toInt()
         try {
-            decodeThrough(position + count)
+            if (seeker == null) decodeThrough(position + count)
+            else if (position + count > 44) {
+                val blockBytes = blockFrames * format.channels * width
+                val first = ((position - 44).coerceAtLeast(0) / blockBytes).toInt()
+                val last = ((position + count - 45) / blockBytes).toInt()
+                for (index in first..last) decodeBlock(index)
+            }
             checkOpen(); file.seek(position); file.readFully(buffer, offset, count)
             count
-        } catch (error: IOException) {
-            failure = error
+        } catch (error: Exception) {
+            val problem = error as? IOException ?: IOException("PCM backend read failed", error)
+            failure = problem
             runCatching { closePcm() }
-            throw error
+            throw problem
         }
     }
 

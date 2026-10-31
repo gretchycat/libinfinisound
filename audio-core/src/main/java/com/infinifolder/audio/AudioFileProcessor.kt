@@ -95,7 +95,8 @@ class AudioFileProcessor(platformDecoders: List<PcmDecoder> = emptyList()) {
                         val result = AudioPreparation(pcm.format, pcm.decoderName ?: decoder.name, pcm.sourceFormat)
                         val source = PcmWaveSource(pcm, scratch, isCancelled, metadata) { observer?.prepared(it) }
                         stream = null // Source owns the decoder from here onwards.
-                        return AudioWaveSource(source, result, true, metadata, { sourceClosed.set(true) }) {
+                        return AudioWaveSource(source, result, true, metadata, { sourceClosed.set(true) }) { error ->
+                            observer?.warning(result.decoder, error)
                             // A decoder can fail after its initial block. Retain the full preparation
                             // fallback policy before returning bytes for the failing request.
                             val prepared = prepare(input, scratch, preference, observer, isCancelled)

@@ -45,6 +45,16 @@ object AudioProcessing : AudioProcessor {
         files.openWaveSource(FileAudioInput(source), scratch, observer = observer, cancelled = cancelled,
             metadata = io.github.gretchycat.infinistream.FileSourceResource(source).metadata)
 
+    /** Playback chooses the measured fast portable MPEG path, with Android fallback inside the library. */
+    fun openPlaybackSource(source: File, scratch: File,
+        observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false }): AudioWaveSource {
+        val input = FileAudioInput(source)
+        val preference = if (StandardAudioDecoders.prefersPortablePlayback(input)) DecoderPreference.PORTABLE_FIRST
+            else DecoderPreference.PLATFORM_FIRST
+        return files.openWaveSource(input, scratch, preference, observer, cancelled,
+            io.github.gretchycat.infinistream.FileSourceResource(source).metadata)
+    }
+
     fun prepareForOutput(
         source: File,
         destination: File,
