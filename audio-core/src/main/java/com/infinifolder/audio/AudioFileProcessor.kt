@@ -73,6 +73,51 @@ class AudioFileProcessor(platformDecoders: List<PcmDecoder> = emptyList()) {
         throw IOException("No decoder accepted ${input.name}", failure)
     }
 
+    /** Known-length PCM is pulled lazily into an explicit disk cache; unknown lengths retain full preparation. */
+    fun openWaveSource(input: AudioInput, scratch: File,
+        preference: DecoderPreference = DecoderPreference.PLATFORM_FIRST,
+        observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false },
+        metadata: io.github.gretchycat.infinistream.StreamMetadata = io.github.gretchycat.infinistream.StreamMetadata()
+    ): AudioWaveSource {
+        require((input as? FileAudioInput)?.file?.canonicalFile != scratch.canonicalFile) { "PCM output must differ from source" }
+        val sourceClosed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val isCancelled = { sourceClosed.get() || cancelled() }
+        var failure: Exception? = null
+        try {
+            for (decoder in candidates(input, preference)) {
+                checkDecodeCancellation()
+                if (isCancelled()) throw InterruptedIOException("Audio preparation cancelled")
+                var stream: PcmStream? = null
+                try {
+                    val pcm = openDecoder(decoder, input)
+                    stream = pcm
+                    if (pcm.format.totalFrames != null) {
+                        val result = AudioPreparation(pcm.format, pcm.decoderName ?: decoder.name, pcm.sourceFormat)
+                        val source = PcmWaveSource(pcm, scratch, isCancelled, metadata) { observer?.prepared(it) }
+                        stream = null // Source owns the decoder from here onwards.
+                        return AudioWaveSource(source, result, true, metadata, { sourceClosed.set(true) }) {
+                            // A decoder can fail after its initial block. Retain the full preparation
+                            // fallback policy before returning bytes for the failing request.
+                            val prepared = prepare(input, scratch, preference, observer, isCancelled)
+                            io.github.gretchycat.infinistream.FileSourceResource(scratch).open() to prepared
+                        }
+                    }
+                    val metrics = PcmSignalAccumulator()
+                    val format = PcmWaveWriter.write(pcm, scratch, metrics::add, cancelled)
+                    pcm.close(); stream = null
+                    val result = AudioPreparation(format, pcm.decoderName ?: decoder.name, pcm.sourceFormat, metrics.finish(format))
+                    observer?.prepared(result)
+                    return AudioWaveSource(io.github.gretchycat.infinistream.FileSourceResource(scratch).open(), result, false, metadata)
+                } catch (cancel: InterruptedIOException) { throw cancel }
+                catch (error: Exception) {
+                    observer?.warning(decoder.name, error)
+                    if (failure == null) failure = error else failure.addSuppressed(error)
+                } finally { stream?.close() }
+            }
+            throw IOException("Unable to decode ${input.name}", failure)
+        } catch (error: Throwable) { scratch.delete(); throw error }
+    }
+
     /** Writes only to the supplied host-owned PCM staging file; failed attempts are discarded. */
     fun prepare(
         input: AudioInput,

@@ -15,7 +15,8 @@ class PlaybackPcmAnalyzer(
     private val path: String,
     private val playback: () -> Pair<Boolean, Long>,
     private val onFailure: (String, Throwable) -> Unit,
-    private val onSamples: (FloatArray, Int, Int) -> Unit
+    private val onSamples: (FloatArray, Int, Int) -> Unit,
+    private val resource: io.github.gretchycat.infinistream.SourceResource? = null
 ) : AudioAnalysisSession {
     private val stopped = AtomicBoolean(false)
     private val thread = Thread({ run() }, "PlaybackPcmAnalyzer").apply { isDaemon = true }
@@ -31,8 +32,24 @@ class PlaybackPcmAnalyzer(
             return
         }
         var codec: MediaCodec? = null
+        var bytes: android.media.MediaDataSource? = null
         try {
-            extractor.setDataSource(path)
+            if (resource == null) extractor.setDataSource(path)
+            else {
+                val source = resource.open()
+                val positional = source as? io.github.gretchycat.infinistream.PositionalReadable
+                if (positional == null || source.metadata.length == null) {
+                    source.close()
+                    throw java.io.IOException("Analysis requires a known-length positional source")
+                }
+                bytes = object : android.media.MediaDataSource() {
+                    override fun getSize() = source.metadata.length!!
+                    override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int) =
+                        positional.readAt(position, buffer, offset, size)
+                    override fun close() = source.close()
+                }
+                extractor.setDataSource(bytes)
+            }
             val track = (0 until extractor.trackCount).firstOrNull {
                 extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
             } ?: return
@@ -111,6 +128,7 @@ class PlaybackPcmAnalyzer(
             runCatching { codec?.stop() }
             runCatching { codec?.release() }
             runCatching { extractor.release() }
+            runCatching { bytes?.close() }
         }
     }
 

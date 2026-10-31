@@ -30,10 +30,20 @@ object AudioProcessing : AudioProcessor {
         onSamples: (FloatArray, Int, Int) -> Unit
     ): AudioAnalysisSession = PlaybackPcmAnalyzer(path, playback, onFailure, onSamples)
 
+    fun createAnalyzer(source: io.github.gretchycat.infinistream.SourceResource,
+        playback: () -> Pair<Boolean, Long>, onFailure: (String, Throwable) -> Unit = { _, _ -> },
+        onSamples: (FloatArray, Int, Int) -> Unit): AudioAnalysisSession =
+        PlaybackPcmAnalyzer("", playback, onFailure, onSamples, source)
+
     fun prefersBufferedDecode(file: File): Boolean = PortableAudioProcessing.prefersBufferedDecode(file)
 
     fun openPcm(input: AudioInput, preference: DecoderPreference = DecoderPreference.PLATFORM_FIRST): PcmStream =
         files.openPcm(input, preference)
+
+    fun openWaveSource(source: File, scratch: File,
+        observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false }): AudioWaveSource =
+        files.openWaveSource(FileAudioInput(source), scratch, observer = observer, cancelled = cancelled,
+            metadata = io.github.gretchycat.infinistream.FileSourceResource(source).metadata)
 
     fun prepareForOutput(
         source: File,

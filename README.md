@@ -76,9 +76,13 @@ MP3 Xing/LAME timing and supported MP4 edit lists trim encoder delay and padding
 
 ## InfiniFolder integration and current costs
 
-InfiniFolder's normal and gapless preload paths give encoded sources to `AudioProcessing.prepareForOutput` and give only the resulting PCM WAVE files to MediaPlayer for output. Duration probing also goes through the library. Player code does not invoke the compressed-format extractor/codec or pass an original compressed file to MediaPlayer.
+InfiniFolder's normal and gapless preload paths use `AudioProcessing.openWaveSource`. They give only the resulting common PCM WAVE ByteSource to MediaPlayer's output adapter. Duration probing also goes through the library. Player code does not invoke the compressed-format extractor/codec or pass an original compressed file to MediaPlayer. The existing `prepareForOutput` API remains available.
 
-The app currently prepares the PCM file before playback, preserving its existing MediaPlayer gapless handoff. Standard codec processing uses bounded sample buffers, but decoded files consume disk space and preparation can increase startup/preload time. The RIFF writer rejects output over its 4 GiB size limit. A future output adapter can consume `PcmStream` directly to avoid full-file staging. Existing composite renderers still use their previous buffered synthesis limits.
+When the decoder knows the exact frame count, `AudioFileProcessor.openWaveSource` returns an `AudioWaveSource` after validating a bounded initial PCM block. Reads decode only the required prefix into an explicit host-owned disk cache. Backward reads use cached bytes; forward seeks may decode intervening frames. Its Stream metadata reports this access cost, actual PCM precision/length/timing and input provenance. Unknown frame counts retain complete PCM preparation. No duration is guessed from bitrate or silent samples.
+
+The host can open borrowed views of that same PCM resource for output and visualizer analysis, sharing one decoder/cache. Closing a view does not close the owner. Closing the owner cancels reads and releases codec/file handles; the host removes its scratch file. Complete signal diagnostics are emitted only once all frames have been validated. On a late decoder error the library retries its full preparation policy; output must retain the negotiated PCM format. Cancellation does not trigger retry. A retry can pause playback; a format-changing fallback is rejected rather than changing an already published WAVE header.
+
+The disk cache can grow to the whole decoded track, and RIFF output over 4 GiB is rejected. Encoded remote/container staging and legacy composite renderer limits are unchanged. Other hosts can consume `PcmStream` directly. Audible playback, interruption, seeking, visualizer alignment and linked gapless transitions require handset acceptance.
 
 The host owns source/cache leases and output files. `PcmStream.close()` releases decoder-owned handles. Other source permissions and playback lifetimes remain host responsibilities.
 
