@@ -92,6 +92,7 @@ static void dispose(audio *s) {
 }
 static int next_frame(audio *s) {
     for(int work=0;work<100000;work++) {
+        if((*s->env)->ExceptionCheck(s->env))return -1;
         int r=p_avcodec_receive_frame(s->codec,s->frame);
         if(r==0){s->offset=0;return 1;}
         if(r==AVERROR_EOF)return 0;
@@ -103,7 +104,11 @@ static int next_frame(audio *s) {
             continue;
         }
         r=p_av_read_frame(s->format,s->packet);
-        if(r==AVERROR_EOF){s->eof=1;continue;}
+        if((*s->env)->ExceptionCheck(s->env))return -1;
+        if(r==AVERROR_EOF){
+            if(s->io->error<0&&s->io->error!=AVERROR_EOF)return -1;
+            s->eof=1;continue;
+        }
         if(r<0)return -1;
         if(s->packet->stream_index==s->stream)r=p_avcodec_send_packet(s->codec,s->packet);
         p_av_packet_unref(s->packet);
