@@ -14,12 +14,17 @@ object FlacPcmDecoder : PcmDecoder {
         try { return FlacStream(bytes) } catch (error: Throwable) { bytes.close(); throw error }
     }
 
-    private class FlacStream(private val source: AudioBytes) : BlockPcmStream() {
+    private class FlacStream(private val source: AudioBytes) : BlockPcmStream(), FrameSeekablePcmStream {
         private val bits = Bits(source)
         override val format: PcmFormat
         private val depth: Int
         private val maxBlock: Int
         private var frames = 0L
+        private val anchors = java.util.TreeMap<Long, Long>()
+        private var pending: IntArray? = null
+        private var closed = false
+        private data class Header(val offset: Long, val firstFrame: Long, val count: Int, val assignment: Int, val variable: Boolean)
+        private data class Decoded(val header: Header, val samples: IntArray, val end: Long)
         init {
             if (bits.read(32) != 0x664c6143L) throw IOException("Missing FLAC signature")
             var info: ByteArray? = null
@@ -45,24 +50,36 @@ object FlacPcmDecoder : PcmDecoder {
             val total = packed and 0xfffffffffL
             if (rate <= 0 || depth !in 4..32 || maxBlock !in 16..65535) throw IOException("Invalid FLAC format")
             format = PcmFormat(rate, channels, total.takeIf { it > 0 }, if (depth <= 16) 16 else if (depth <= 24) 24 else 32)
+            anchors[0] = bits.position
         }
 
         override fun nextBlock(): IntArray? {
             checkDecodeCancellation()
+            if (closed) throw IOException("FLAC stream is closed")
+            pending?.let { pending = null; return it }
             if (format.totalFrames?.let { frames >= it } == true) return null
             if (bits.atEnd()) {
                 if (format.totalFrames?.let { frames < it } == true) throw EOFException("Truncated FLAC audio")
                 return null
             }
+            val header = readHeader()
+            if (format.totalFrames?.let { frames + header.count > it } == true) throw IOException("FLAC frame exceeds declared duration")
+            val output = decodeFrame(header)
+            frames += header.count
+            return output
+        }
+
+        private fun readHeader(): Header {
+            val offset = bits.position
             bits.beginFrame()
             if (bits.read(14) != 0x3ffeL || bits.read(1) != 0L) throw IOException("Invalid FLAC frame sync")
-            bits.read(1) // Blocking strategy; PCM position is tracked independently.
+            val variable = bits.read(1) != 0L
             val blockCode = bits.read(4).toInt()
             val rateCode = bits.read(4).toInt()
             val assignment = bits.read(4).toInt()
             val depthCode = bits.read(3).toInt()
             if (bits.read(1) != 0L) throw IOException("Reserved FLAC header bit")
-            readCodedNumber()
+            val number = readCodedNumber()
             val count = when (blockCode) {
                 1 -> 192
                 in 2..5 -> 576 shl (blockCode - 2)
@@ -87,9 +104,18 @@ object FlacPcmDecoder : PcmDecoder {
             val channels = if (assignment <= 7) assignment + 1 else if (assignment <= 10) 2 else 0
             if (rate != format.sampleRate || channels != format.channels || frameDepth != depth || count > maxBlock)
                 throw IOException("Inconsistent FLAC frame format")
-            if (format.totalFrames?.let { frames + count > it } == true) throw IOException("FLAC frame exceeds declared duration")
+            val firstFrame = if (variable) number else number * maxBlock
+            if (firstFrame > 0xfffffffffL || format.totalFrames?.let { firstFrame + count > it } == true)
+                throw IOException("FLAC frame exceeds declared duration")
             bits.read(8)
             if (bits.crc8 != 0) throw IOException("FLAC header CRC mismatch")
+            return Header(offset, firstFrame, count, assignment, variable)
+        }
+
+        private fun decodeFrame(header: Header): IntArray {
+            val count = header.count
+            val assignment = header.assignment
+            val channels = format.channels
             val samples = Array(channels) { channel ->
                 val extra = (assignment == 8 && channel == 1) || (assignment == 9 && channel == 0) || (assignment == 10 && channel == 1)
                 subframe(count, depth + if (extra) 1 else 0)
@@ -115,18 +141,123 @@ object FlacPcmDecoder : PcmDecoder {
                     output[i * channels + channel] = (value shl (32 - depth)).toInt()
                 }
             }
-            frames += count
             return output
         }
 
-        private fun readCodedNumber() {
+        private fun decodedAt(position: Long): Decoded {
+            bits.seek(position)
+            val header = readHeader()
+            val samples = decodeFrame(header)
+            val end = bits.position
+            val nextSample = header.firstFrame + header.count
+            if (nextSample != format.totalFrames && end < source.size) {
+                val next = readHeader()
+                if (next.firstFrame != nextSample || next.variable != header.variable)
+                    throw IOException("Unlinked FLAC seek candidate")
+            } else if (format.totalFrames != null && nextSample != format.totalFrames) {
+                throw EOFException("Truncated FLAC seek candidate")
+            }
+            bits.seek(end)
+            return Decoded(header, samples, end)
+        }
+
+        /** Validate frame CRC and the following sample-number link when resynchronizing. */
+        private fun findNext(start: Long, limit: Long): Decoded? {
+            val window = ByteArray(16384)
+            var position = start
+            // A FLAC frame's byte length is represented by 24 bits in STREAMINFO.
+            val end = minOf(limit, start + 0xffffffL)
+            while (position < end - 1) {
+                checkDecodeCancellation()
+                val n = source.readAt(position, window, 0, minOf(window.size.toLong(), end - position).toInt())
+                if (n <= 0) throw EOFException("Truncated FLAC seek window")
+                for (i in 0 until n - 1) {
+                    if (window[i].toInt() and 255 != 255 || window[i + 1].toInt() and 254 != 248) continue
+                    try {
+                        return decodedAt(position + i)
+                    } catch (cancel: java.io.InterruptedIOException) { throw cancel }
+                    catch (_: IOException) { /* Try the next sync; only complete valid frames are anchors. */ }
+                }
+                // Preserve sync pairs across window boundaries, including legal one-byte reads.
+                if (n == 1) {
+                    val pair = ByteArray(2)
+                    pair[0] = window[0]
+                    val next = source.readAt(position + 1, pair, 1, 1)
+                    if (next <= 0) throw EOFException("Truncated FLAC seek window")
+                    if (pair[0].toInt() and 255 == 255 && pair[1].toInt() and 254 == 248) {
+                        try {
+                            return decodedAt(position)
+                        } catch (cancel: java.io.InterruptedIOException) { throw cancel }
+                        catch (_: IOException) {}
+                    }
+                    position++
+                } else position += n - 1
+            }
+            return null
+        }
+
+        private fun remember(sample: Long, offset: Long) {
+            anchors[sample] = offset
+            if (anchors.size > 4096) {
+                val keys = anchors.keys.toList()
+                for (i in 1 until keys.size step 2) anchors.remove(keys[i])
+            }
+        }
+
+        override fun seekToFrame(frame: Long) {
+            checkDecodeCancellation()
+            if (closed) throw IOException("FLAC stream is closed")
+            require(frame >= 0 && (format.totalFrames == null || frame <= format.totalFrames!!))
+            clearDecodedBlock(); pending = null
+            if (frame == format.totalFrames) { frames = frame; bits.seek(source.size); return }
+            var low = anchors.floorEntry(frame).value
+            var sample = anchors.floorEntry(frame).key
+            var high = anchors.higherEntry(frame)?.value ?: source.size
+            while (frame - sample >= maxBlock && high - low > 32768) {
+                val mid = low + (high - low) / 2
+                val decoded = findNext(mid, high)
+                if (decoded == null) { high = mid; continue }
+                val header = decoded.header
+                remember(header.firstFrame, header.offset)
+                if (header.firstFrame > frame) high = header.offset
+                else if (header.firstFrame + header.count <= frame) {
+                    low = decoded.end; sample = header.firstFrame + header.count
+                } else {
+                    frames = header.firstFrame + header.count
+                    pending = decoded.samples.copyOfRange(((frame - header.firstFrame) * format.channels).toInt(), decoded.samples.size)
+                    return
+                }
+            }
+            bits.seek(low)
+            while (true) {
+                checkDecodeCancellation()
+                val header = readHeader()
+                if (header.firstFrame != sample) throw IOException("Inconsistent FLAC seek sample number")
+                val output = decodeFrame(header)
+                remember(sample, header.offset)
+                frames = sample + header.count
+                if (frame < frames) {
+                    pending = output.copyOfRange(((frame - sample) * format.channels).toInt(), output.size)
+                    return
+                }
+                sample = frames
+            }
+        }
+
+        private fun readCodedNumber(): Long {
             val first = bits.read(8).toInt()
-            if (first and 128 == 0) return
+            if (first and 128 == 0) return first.toLong()
             var count = 0
             var mask = 128
             while (first and mask != 0 && mask > 0) { count++; mask = mask ushr 1 }
             if (count !in 2..7) throw IOException("Invalid FLAC coded number")
-            repeat(count - 1) { if (bits.read(8).toInt() and 0xc0 != 0x80) throw IOException("Invalid FLAC coded-number continuation") }
+            var number = (first and (127 ushr count)).toLong()
+            repeat(count - 1) {
+                val next = bits.read(8).toInt()
+                if (next and 0xc0 != 0x80) throw IOException("Invalid FLAC coded-number continuation")
+                number = (number shl 6) or (next and 63).toLong()
+            }
+            return number
         }
 
         private fun subframe(count: Int, originalDepth: Int): LongArray {
@@ -192,7 +323,7 @@ object FlacPcmDecoder : PcmDecoder {
                 }
             }
         }
-        override fun close() = source.close()
+        override fun close() { if (!closed) { closed = true; clearDecodedBlock(); pending = null; source.close() } }
     }
 
     private class Bits(private val source: AudioBytes) {
@@ -204,6 +335,11 @@ object FlacPcmDecoder : PcmDecoder {
         private var left = 0
         var crc8 = 0; private set
         var crc16 = 0; private set
+        val position get() = start + cursor
+        fun seek(position: Long) {
+            if (position !in 0..source.size) throw IOException("FLAC seek outside source")
+            start = position; cursor = 0; size = 0; left = 0
+        }
         fun atEnd() = left == 0 && start + cursor >= source.size
         fun beginFrame() { check(left == 0); crc8 = 0; crc16 = 0 }
         private fun byte(): Int {

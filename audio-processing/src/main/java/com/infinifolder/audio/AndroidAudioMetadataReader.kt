@@ -56,8 +56,35 @@ internal object AndroidAudioMetadataReader : AudioMetadataReader {
         }
     }
 
-    override fun probeFormat(file: File, fallbackName: String, durationMs: Long): AudioFormatInfo {
-        val ext = file.extension.lowercase().ifEmpty { fallbackName.substringAfterLast('.', "").lowercase() }
+    override fun probeFormat(file: File, fallbackName: String, durationMs: Long): AudioFormatInfo =
+        probeFormat(file.name, file.length(), fallbackName, durationMs,
+            { it.setDataSource(file.absolutePath) }, { it.setDataSource(file.absolutePath) },
+            { buffer -> file.inputStream().use { it.read(buffer) } })
+
+    fun probeFormat(resource: io.github.gretchycat.infinistream.SourceResource,
+        fallbackName: String, durationMs: Long): AudioFormatInfo = StreamAudioInput(resource).open().use { source ->
+        val adapter = object : MediaDataSource() {
+            override fun getSize() = source.size
+            override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int) = source.readAt(position, buffer, offset, size)
+            override fun close() {} // Borrowed until the enclosing metadata read finishes.
+        }
+        probeFormat(resource.metadata.name ?: fallbackName, source.size, fallbackName, durationMs,
+            { it.setDataSource(adapter) }, { it.setDataSource(adapter) }, { buffer ->
+                var at = 0
+                while (at < buffer.size) {
+                    val n = source.readAt(at.toLong(), buffer, at, buffer.size - at)
+                    if (n < 0) break
+                    if (n == 0) throw java.io.IOException("Metadata source made no progress")
+                    at += n
+                }
+                at
+            })
+    }
+
+    private fun probeFormat(name: String, size: Long, fallbackName: String, durationMs: Long,
+        configureRetriever: (MediaMetadataRetriever) -> Unit, configureExtractor: (MediaExtractor) -> Unit,
+        readHeader: (ByteArray) -> Int): AudioFormatInfo {
+        val ext = name.substringAfterLast('.', "").lowercase().ifEmpty { fallbackName.substringAfterLast('.', "").lowercase() }
 
         val isTracker = ext in setOf(
             "mod", "s3m", "xm", "it", "med", "okt", "mtm", "669", "far", "amf", "dsm", "ult", "psm", "umx"
@@ -96,7 +123,7 @@ internal object AndroidAudioMetadataReader : AudioMetadataReader {
         runCatching {
             val retriever = MediaMetadataRetriever()
             try {
-                retriever.setDataSource(file.absolutePath)
+                configureRetriever(retriever)
                 val brStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
                 if (brStr != null) {
                     val b = brStr.toIntOrNull() ?: 0
@@ -119,7 +146,7 @@ internal object AndroidAudioMetadataReader : AudioMetadataReader {
             runCatching {
                 val extractor = MediaExtractor()
                 try {
-                    extractor.setDataSource(file.absolutePath)
+                    configureExtractor(extractor)
                     for (i in 0 until extractor.trackCount) {
                         val format = extractor.getTrackFormat(i)
                         val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
@@ -146,9 +173,8 @@ internal object AndroidAudioMetadataReader : AudioMetadataReader {
         // 3. Fallback for WAV / PCM RIFF header
         if ((sampleRate == 0 || channels == 0 || bitrateKbps == 0) && (ext == "wav" || ext == "wave" || ext == "riff")) {
             runCatching {
-                file.inputStream().use { stream ->
                     val header = ByteArray(44)
-                    if (stream.read(header) >= 44 && header[0] == 'R'.code.toByte() && header[1] == 'I'.code.toByte()) {
+                    if (readHeader(header) >= 44 && header[0] == 'R'.code.toByte() && header[1] == 'I'.code.toByte()) {
                         val ch = (header[22].toInt() and 0xFF) or ((header[23].toInt() and 0xFF) shl 8)
                         val sr = (header[24].toInt() and 0xFF) or
                                 ((header[25].toInt() and 0xFF) shl 8) or
@@ -161,15 +187,14 @@ internal object AndroidAudioMetadataReader : AudioMetadataReader {
                             bitrateKbps = ((sr.toLong() * ch * bps) / 1000L).toInt().coerceAtLeast(1)
                         }
                     }
-                }
             }
         }
 
         // 4. If bitrate is still not resolved, compute from file size and duration
-        if (bitrateKbps == 0 && file.length() > 0) {
+        if (bitrateKbps == 0 && size > 0) {
             val dur = durationMs
             if (dur > 0) {
-                bitrateKbps = ((file.length() * 8L) / dur).toInt()
+                bitrateKbps = ((size * 8L) / dur).toInt()
             }
         }
 

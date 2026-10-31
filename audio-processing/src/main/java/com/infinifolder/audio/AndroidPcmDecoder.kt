@@ -59,9 +59,12 @@ internal object AndroidPcmDecoder : PcmDecoder {
                 }
                 bytes
             }
-            val flacDepth = if (probe.size >= 26 && String(probe, 0, 4, Charsets.US_ASCII) == "fLaC")
+            val flac = probe.size >= 26 && String(probe, 0, 4, Charsets.US_ASCII) == "fLaC"
+            val flacDepth = if (flac)
                 (((probe[20].toInt() and 1) shl 4) or ((probe[21].toInt() and 255) ushr 4)) + 1 else 16
-            if (flacDepth > 16) format.setInteger(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_32BIT)
+            // Changing this MediaFormat cannot change PCM already produced by an extractor.
+            // Request wider output only from a codec we configure; otherwise check its real precision.
+            if (flacDepth > 16 && mime != "audio/raw") format.setInteger(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_32BIT)
             if (mime != "audio/raw") {
                 codec = MediaCodec.createDecoderByType(mime)
                 codec.configure(format, null, null, 0)
@@ -69,12 +72,20 @@ internal object AndroidPcmDecoder : PcmDecoder {
             }
             val stream = AndroidStream(extractor, codec, dataSource, format)
             if (stream.precisionBits < flacDepth) throw IOException("Android codec reduced FLAC sample precision")
+            // Canonical FLAC output width follows source precision, even when a codec
+            // supplies a wider integer container. This keeps late fallback format-stable.
+            val pcm: PcmStream = if (flac) object : PcmStream {
+                override val format = stream.format.copy(bitsPerSample = if (flacDepth <= 16) 16 else if (flacDepth <= 24) 24 else 32)
+                override val decoderName get() = stream.decoderName
+                override fun read(samples: IntArray, offset: Int, length: Int) = stream.read(samples, offset, length)
+                override fun close() = stream.close()
+            } else stream
             val timing = AudioStreamTiming.read(input,stream.format.sampleRate)
             val leading = if (hasDelay) delay.toLong() else timing?.leadingFrames ?: 0L
             val limit = timing?.totalFrames
             if (limit != null) return object : FrameSeekablePcmStream {
                 private val mpeg = if (mime == "audio/mpeg") MpegFrameIndex(input, stream.format.sampleRate) else null
-                private var output: PcmStream = TrimmedPcmStream(stream, leading, padding, limit)
+                private var output: PcmStream = TrimmedPcmStream(pcm, leading, padding, limit)
                 override val format = output.format
                 override val decoderName get() = stream.decoderName
                 override fun read(samples: IntArray, offset: Int, length: Int) = output.read(samples, offset, length)
@@ -86,12 +97,12 @@ internal object AndroidPcmDecoder : PcmDecoder {
                         if (anchor.frame == 0L) stream.restartMpeg(input, frame + leading)
                         else stream.restartMpeg(mpeg.inputFrom(anchor), frame + leading + anchor.headerFrames - anchor.frame)
                     }
-                    output = TrimmedPcmStream(stream, paddingFrames = padding, totalFrames = limit - frame)
+                    output = TrimmedPcmStream(pcm, paddingFrames = padding, totalFrames = limit - frame)
                 }
                 override fun close() = stream.close()
             }
             return if (leading != 0L || padding != 0 || limit != null)
-                TrimmedPcmStream(stream,leading,padding,limit) else stream
+                TrimmedPcmStream(pcm,leading,padding,limit) else pcm
         } catch (error: Throwable) {
             runCatching { codec?.stop() }; runCatching { codec?.release() }
             runCatching { extractor.release() }; runCatching { dataSource?.close() }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.infinifolder.audio.analysis.PlaybackPcmAnalyzer
 import com.infinifolder.audio.stream.FileAudioInput
+import com.infinifolder.audio.stream.probe
 import java.io.File
 
 /** Default codec composition. It has no dependency on a viewer, storage runtime or audio output. */
@@ -54,6 +55,41 @@ object AudioProcessing : AudioProcessor {
         return files.openWaveSource(input, scratch, preference, observer, cancelled,
             io.github.gretchycat.infinistream.FileSourceResource(source).metadata)
     }
+
+    /** The host stages only when a legacy renderer requires a file/companion-file context. */
+    fun requiresLocalFileForPlayback(source: io.github.gretchycat.infinistream.SourceResource): Boolean =
+        PortableAudioProcessing.prefersBufferedDecode(com.infinifolder.audio.StreamAudioInput(source).probe())
+
+    /** Borrowed reopenable input; no implicit encoded-source download or output device access. */
+    fun openPlaybackSource(source: io.github.gretchycat.infinistream.SourceResource, scratch: File,
+        observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false }): AudioWaveSource {
+        val delegate = StreamAudioInput(source)
+        val input = object : AudioInput {
+            override val name = delegate.name
+            override fun open(): AudioBytes {
+                if (cancelled()) throw java.io.InterruptedIOException("Audio input cancelled")
+                val bytes = delegate.open()
+                return object : AudioBytes by bytes {
+                    override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int {
+                        if (cancelled()) throw java.io.InterruptedIOException("Audio input cancelled")
+                        return bytes.readAt(position, buffer, offset, length)
+                    }
+                }
+            }
+        }
+        val preference = if (StandardAudioDecoders.prefersPortablePlayback(input)) DecoderPreference.PORTABLE_FIRST
+            else DecoderPreference.PLATFORM_FIRST
+        return files.openWaveSource(input, scratch, preference, observer, cancelled, source.metadata)
+    }
+
+    fun probeFormat(source: io.github.gretchycat.infinistream.SourceResource,
+        fallbackName: String = "", durationMs: Long = 0L): AudioFormatInfo =
+        AndroidAudioMetadataReader.probeFormat(source, fallbackName, durationMs)
+
+    fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean = false): AudioTags =
+        StreamAudioInput(source).open().use { bytes ->
+            metadata.readTags(AudioMetadataSource.Seekable(bytes.size, bytes::readAt), includeArtwork)
+        }
 
     fun prepareForOutput(
         source: File,
