@@ -134,3 +134,15 @@ These are loading diagnostics and successful builds, not a new complete regressi
 suite run or handset/audible acceptance. The preceding 100-case core and 885-case
 consumer gate results remain historical evidence. No new automated test cases
 were added for this checkpoint.
+
+## Game-music timing correction (checkpoint 26)
+
+The consumer reported incorrect NSF/VGM/VGZ/SPC playback and missing playlist
+lengths despite successful preparation in checkpoint 25. That earlier preparation
+diagnostic did not establish audible correctness. The adapter now distinguishes
+file timing, loop-derived timing and the untimed playback cap, preserves finite
+endpoints/fades, uses information-only metadata sessions, and rejects GME command
+warnings. Native timing inspection covers legacy containers as well as the extra
+codecs. The consumer also corrects malformed generated game-music fixtures.
+Compilation and handset results are recorded by the consumer; no new automated
+tests or full regression run are implied by these source corrections.

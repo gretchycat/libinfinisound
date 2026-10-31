@@ -106,38 +106,61 @@ JNIEXPORT jint JNICALL MIDI(bankLoads)(JNIEnv *e,jobject self){(void)e;(void)sel
 
 /* Real game-music emulation with a finite, declared playback window for loops. */
 typedef void Music_Emu;
-typedef struct { int length,intro_length,loop_length,play_length,other[12]; const char *system,*game,*song,*author,*copyright,*comment,*dumper; } game_info;
+typedef struct { int length,intro_length,loop_length,play_length,fade_length,other[11]; const char *system,*game,*song,*author,*copyright,*comment,*dumper; } game_info;
 static const char *(*gopen)(const void *,long,Music_Emu **,int);
 static const char *(*gstart)(Music_Emu *,int), *(*gplay)(Music_Emu *,int,short *);
-static void (*gdelete)(Music_Emu *),(*gfade)(Music_Emu *,int),(*gignore)(Music_Emu *,int);
+static void (*gdelete)(Music_Emu *),(*gignore)(Music_Emu *,int),(*glimit)(Music_Emu *,int);
+static const char *(*gwarning)(Music_Emu *);
 static const char *(*ginfo)(const Music_Emu *,game_info **,int);static void (*gfree)(game_info *);
 static pthread_once_t game_once=PTHREAD_ONCE_INIT;static int game_ready;
 static void init_game(void){void *h=dlopen("libvlc.so",RTLD_NOW|RTLD_LOCAL);if(!h)return;
 #define G(v,n) do{*(void **)(&v)=dlsym(h,n);if(!v)return;}while(0)
-    G(gopen,"gme_open_data");G(gstart,"gme_start_track");G(gplay,"gme_play");G(gdelete,"gme_delete");G(gfade,"gme_set_fade");G(gignore,"gme_ignore_silence");G(ginfo,"gme_track_info");G(gfree,"gme_free_info");
+    G(gopen,"gme_open_data");G(gstart,"gme_start_track");G(gplay,"gme_play");G(gdelete,"gme_delete");G(gignore,"gme_ignore_silence");G(ginfo,"gme_track_info");G(gfree,"gme_free_info");
+    G(glimit,"gme_set_autoload_playback_limit");G(gwarning,"gme_warning");
 #undef G
     game_ready=1;
 }
-typedef struct {Music_Emu *emu;int milliseconds;} game_session;
+typedef struct {Music_Emu *emu;int milliseconds,metadata_milliseconds,fade_milliseconds;} game_session;
 #define GAME(n) Java_com_infinifolder_audio_GameMusicNative_##n
-JNIEXPORT jlong JNICALL GAME(open)(JNIEnv *e,jobject self,jbyteArray data){
+JNIEXPORT jlong JNICALL GAME(open)(JNIEnv *e,jobject self,jbyteArray data,jboolean information_only){
     (void)self;pthread_once(&game_once,init_game);if(!game_ready){error(e,"Bundled game music API unavailable");return 0;}
     game_session *s=calloc(1,sizeof(*s));if(!s){error(e,"Game music allocation failed");return 0;}
     jbyte *p=(*e)->GetByteArrayElements(e,data,NULL);if(!p){free(s);return 0;}
     int track=(*e)->GetArrayLength(e,data)>8&&!memcmp(p,"NESM",4)?((unsigned char)p[7]>0?(unsigned char)p[7]-1:0):0;
-    const char *failure=gopen(p,(*e)->GetArrayLength(e,data),&s->emu,44100);
+    const char *failure=gopen(p,(*e)->GetArrayLength(e,data),&s->emu,information_only?-1:44100);
     (*e)->ReleaseByteArrayElements(e,data,p,JNI_ABORT);
-    if(!failure)failure=gstart(s->emu,track);
-    if(failure){if(s->emu)gdelete(s->emu);free(s);error(e,"Cannot decode game music source");return 0;}
-    game_info *info=NULL;int length=150000;
-    if(!ginfo(s->emu,&info,track)&&info){if(info->play_length>0)length=info->play_length;gfree(info);}
-    if(length>24*3600*1000-8000){gdelete(s->emu);free(s);error(e,"Game music timeline exceeds limit");return 0;}
-    s->milliseconds=length+8000;gignore(s->emu,1);gfade(s->emu,length);
+    if(failure){if(s->emu)gdelete(s->emu);free(s);error(e,"Cannot parse game music source");return 0;}
+    game_info *info=NULL;int64_t length=150000;int fade=8000,known=0;
+    failure=ginfo(s->emu,&info,track);
+    if(!failure&&info){
+        if(info->length>0){length=info->length;fade=info->fade_length>=0?info->fade_length:0;known=1;}
+        else if(info->intro_length>=0&&info->loop_length>0){
+            length=(int64_t)info->intro_length+2LL*info->loop_length;
+            fade=info->fade_length>=0?info->fade_length:8000;known=1;
+        }
+        gfree(info);
+    }
+    if(failure||length+fade>24*3600*1000){gdelete(s->emu);free(s);error(e,"Cannot inspect game music timeline");return 0;}
+    s->milliseconds=(int)(length+fade);s->fade_milliseconds=fade;
+    s->metadata_milliseconds=known?s->milliseconds:0;
+    if(!information_only){
+        // Preserve source time zero. The Kotlin stream applies the declared
+        // fade; GME's implicit fade/silence trimming must not shorten it.
+        gignore(s->emu,1);glimit(s->emu,0);
+        failure=gstart(s->emu,track);
+        if(!failure)failure=gwarning(s->emu);
+        if(failure){gdelete(s->emu);free(s);error(e,"Cannot start game music emulation");return 0;}
+    }
     return (jlong)(intptr_t)s;
 }
 JNIEXPORT jint JNICALL GAME(duration)(JNIEnv *e,jobject self,jlong h){(void)e;(void)self;return ((game_session *)(intptr_t)h)->milliseconds;}
+JNIEXPORT jint JNICALL GAME(metadataDuration)(JNIEnv *e,jobject self,jlong h){(void)e;(void)self;return ((game_session *)(intptr_t)h)->metadata_milliseconds;}
+JNIEXPORT jint JNICALL GAME(fadeDuration)(JNIEnv *e,jobject self,jlong h){(void)e;(void)self;return ((game_session *)(intptr_t)h)->fade_milliseconds;}
 JNIEXPORT void JNICALL GAME(render)(JNIEnv *e,jobject self,jlong h,jshortArray data,jint samples){
     (void)self;if(samples<0||samples>65536||samples>(*e)->GetArrayLength(e,data)){error(e,"Invalid game music render size");return;}
-    short pcm[65536];const char *r=gplay(((game_session *)(intptr_t)h)->emu,samples,pcm);if(r){error(e,"Game music emulation failed");return;}(*e)->SetShortArrayRegion(e,data,0,samples,pcm);
+    short pcm[65536];Music_Emu *emu=((game_session *)(intptr_t)h)->emu;
+    const char *r=gplay(emu,samples,pcm);if(!r)r=gwarning(emu);
+    if(r){error(e,"Game music emulation failed or encountered invalid source commands");return;}
+    (*e)->SetShortArrayRegion(e,data,0,samples,pcm);
 }
 JNIEXPORT void JNICALL GAME(close)(JNIEnv *e,jobject self,jlong h){(void)e;(void)self;game_session *s=(void *)(intptr_t)h;if(s){gdelete(s->emu);free(s);}}

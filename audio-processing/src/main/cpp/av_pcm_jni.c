@@ -163,6 +163,11 @@ JNIEXPORT jstring JNICALL JNI(codec)(JNIEnv *e,jobject self,jlong h){(void)self;
 JNIEXPORT jlong JNICALL JNI(duration)(JNIEnv *e,jobject self,jlong h) {
     (void)self;audio *s=(void *)(intptr_t)h;s->env=e;
     if(s->format->duration>0)return s->format->duration/1000;
+    AVStream *stream=s->format->streams[s->stream];
+    if(stream->duration>0&&stream->time_base.num>0&&stream->time_base.den>0){
+        long double ms=(long double)stream->duration*stream->time_base.num*1000/stream->time_base.den;
+        if(ms>0&&ms<INT64_MAX)return (jlong)ms;
+    }
     // Small legacy files (notably raw RealAudio) may have no timing fields.
     // Count only within strict byte/frame/time limits in this metadata-only session.
     if(s->size>65536)return 0;

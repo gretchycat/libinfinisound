@@ -174,11 +174,18 @@ publication; the direct adapter prepares it without playback timestamp pacing.
 Existing MP3/FLAC selection and positioned caching are retained.
 
 The optional GME C API in the pinned AAR provides actual NSF/NSFE, SPC and related
-game-music emulation. The selected/default track uses its reported playback
-length, or 150 seconds for an untimed loop, then an eight-second fade. This
-explicit finite rendering policy enables lazy PCM without claiming an intrinsic
-duration for endless music. Malformed inputs fail through the common decoder
-contract. Other formats still require a real registered decoder.
+game-music emulation. Finite tracks use their file-supplied length and fade;
+nonlooping VGM does not acquire an extra eight seconds. Timed loops use their
+intro plus two loop repetitions and a supplied/default fade. Untimed loops retain
+the explicit 150-second playback cap plus eight-second fade, which is not returned
+as file metadata. Information-only GME sessions inspect timing without starting
+emulation. VGZ is inflated within a 32 MiB limit before entering GME. Emulation
+warnings fail through the common decoder contract instead of publishing damaged
+command execution as success. Other formats still require a real decoder.
+
+Duration fallback also inspects native container/stream timing for portable legacy
+formats, including those Android cannot inspect. It does not render a full song
+to populate playlist metadata.
 
 The optional FluidLite/GME symbols are resolved at runtime and fail explicitly
 when absent from a replacement AAR. Portable-only policy excludes these native

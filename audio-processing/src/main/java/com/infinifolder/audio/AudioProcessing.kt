@@ -118,19 +118,27 @@ object AudioProcessing : AudioProcessor {
         if (com.infinifolder.audio.tracker.MidiSequencer.isMidi(probe.bytes))
             return AudioTags(null,null,null,com.infinifolder.audio.midi.MidiTimeline.read(input).durationMs.toString())
         if (GameMusicPcmDecoder.matches(input,probe))
-            return AudioTags(null,null,null,GameMusicPcmDecoder.open(input).use { it.format.durationMs?.toString() })
+            return AudioTags(null,null,null,GameMusicPcmDecoder.inspectDuration(input)?.toString())
         val tags = runCatching { input.open().use { bytes ->
             metadata.readTags(AudioMetadataSource.Seekable(bytes.size, bytes::readAt), includeArtwork)
         } }.getOrElse { AudioTags(null,null,null,null) }
         if ((tags.duration?.toLongOrNull() ?: 0) > 0) return tags
-        return tags.copy(duration = inspectDuration(input)?.toString())
+        val duration = try { inspectDuration(input) }
+            catch (cancel: java.io.InterruptedIOException) { throw cancel }
+            catch (_: Exception) { null }
+            catch (_: LinkageError) { null }
+        return tags.copy(duration = duration?.toString())
     }
 
     private fun inspectDuration(input: AudioInput): Long? {
         PortableAudioDuration.read(input)?.let { return it }
         val probe = input.probe()
-        if (GameMusicPcmDecoder.matches(input,probe)) return GameMusicPcmDecoder.open(input).use { it.format.durationMs }
-        if (probe.normalizedExtension in platformExtensions) {
+        if (GameMusicPcmDecoder.matches(input,probe)) return GameMusicPcmDecoder.inspectDuration(input)
+        // Many portable legacy containers (AIFF, CAF, AU, VOC, DSD, etc.) play
+        // successfully but Android supplies no timing for them. Let the same
+        // native demuxer inspect these too, without rendering an entire track.
+        if (LibVlcPcmDecoder.matches(input,probe) &&
+            probe.normalizedExtension !in setOf("sf2", "sfz", "pat")) {
             try { return LibVlcAvDecoder.inspectDuration(input) }
             catch (cancel: java.io.InterruptedIOException) { throw cancel }
             catch (_: Exception) { }
