@@ -1,0 +1,14 @@
+Fluid (R3) General MIDI SoundFont, version 3.1
+Copyright 2000-2002, 2008 Frank Wen. MIT license: see COPYING.txt.
+Original README is retained as README.txt.
+Source: https://deb.debian.org/debian/pool/main/f/fluid-soundfont/fluid-soundfont_3.1.orig.tar.gz
+Archive SHA-256: 2621acaa1c78e4abdb24bdd163230cc577e61276936d6aa6e3180582142f0343
+Unmodified FluidR3_GM.sf2: 148398306 bytes
+SF2 SHA-256: 74594e8f4250680adf590507a306655a299935343583256f3b722c48a1bc1cb0
+
+The SF2 is bzip2-compressed losslessly. The compressed stream is split into
+three consecutive asset fragments, each below GitHub's single-file size limit.
+Concatenate FluidR3_GM.sf2.part0.bz2, part1.bz2, part2.bz2 before decompression.
+The Android adapter streams all parts to one checksum-verified cached SF2;
+it does not create the decompressed soundfont in the Java heap.
+Actual preset/sample synthesis uses libVLC's bundled FluidLite backend.

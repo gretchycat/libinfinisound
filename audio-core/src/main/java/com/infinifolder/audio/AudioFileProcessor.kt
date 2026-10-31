@@ -8,8 +8,11 @@ import java.io.IOException
 import java.io.InterruptedIOException
 
 /** All codec selection and platform fallback belong here, independent of the audio output. */
-class AudioFileProcessor(platformDecoders: List<PcmDecoder> = emptyList()) {
+class AudioFileProcessor @JvmOverloads constructor(platformDecoders: List<PcmDecoder> = emptyList(),
+    fallbackDecoders: List<PcmDecoder> = emptyList(), preferredDecoders: List<PcmDecoder> = emptyList()) {
     private val platform = platformDecoders.toList()
+    private val fallback = fallbackDecoders.toList()
+    private val preferred = preferredDecoders.toList()
     private fun candidates(input: AudioInput, preference: DecoderPreference): List<PcmDecoder> {
         val probe = input.probe()
         val portable = StandardAudioDecoders.decoders + LegacyPcmDecoder
@@ -19,7 +22,12 @@ class AudioFileProcessor(platformDecoders: List<PcmDecoder> = emptyList()) {
             DecoderPreference.PORTABLE_FIRST -> portable + platform
             DecoderPreference.PLATFORM_FIRST -> if (customFirst) listOf(LegacyPcmDecoder) + platform + portable else platform + portable
         }
-        return candidates.distinct().filter { it.matches(input, probe) }
+        val all = when (preference) {
+            DecoderPreference.PORTABLE_ONLY -> candidates
+            DecoderPreference.PORTABLE_FIRST -> candidates + preferred + fallback
+            DecoderPreference.PLATFORM_FIRST -> preferred + candidates + fallback
+        }
+        return all.distinct().filter { it.matches(input, probe) }
     }
     private fun openDecoder(decoder: PcmDecoder, input: AudioInput): PcmStream = try {
         decoder.open(input)

@@ -1,0 +1,8 @@
+LibVLC-Android 3.7.7
+Copyright © VLC authors, VideoLAN and VideoLabs.
+Android bindings: GNU Lesser General Public License 2.1 or later.
+Upstream artifact metadata declares LGPL 2.1. See COPYING.LIB.txt.
+Sources: https://code.videolan.org/videolan/libvlcjni
+Published sources: https://repo.maven.apache.org/maven2/org/videolan/android/libvlc-all/3.7.7/libvlc-all-3.7.7-sources.jar
+Native engine and contributions: https://code.videolan.org/videolan/vlc
+The original InfiniSound adapters have separate license status (LICENSE.md).

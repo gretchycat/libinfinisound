@@ -115,3 +115,36 @@ reports unsupported. SFZ requires readable, decodable referenced WAV samples and
 uses their actual rate/channels; sampleless GUS patches fail. MIDI note synthesis
 and previews of valid sample banks remain input-driven. No decoder fallback may
 replace failed input with a test signal.
+
+## libVLC PCM fallback and FluidR3 MIDI
+
+The Android composition registers libVLC 3.7.7 as an additional `PcmDecoder` after
+existing codecs. MP3/FLAC selection, exact positioning and linked output retain
+their existing paths. libVLC accepts the same reopenable `AudioInput` interface,
+uses bounded positional input reads and returns signed 16-bit decoded PCM through
+`PcmStream`. Native PCM callbacks feed a bounded queue; no libVLC device output,
+video surface, network source URL or caller-owned encoded-file staging is used.
+A source must actually yield decoded audio before it is accepted. Invalid sources
+still reject. The code depends on the upstream libVLC artifact, not InfiniVideo;
+Gradle deduplicates the identical upstream dependency in a combined application.
+
+Container durations are not treated as exact PCM lengths. This backend currently
+has no exact frame-seek/length API: the existing explicit PCM preparation path
+finishes decoding before publishing its WAVE to an output player. Encoded bytes
+are read through callbacks; this is not a claim of lazy PCM playback for libVLC
+formats. Existing known-length fast paths remain lazy and positioned.
+
+Call `AudioProcessing.initialize(context)` to enable the bundled FluidR3_GM
+bank for MIDI. First MIDI use streams the three consecutive bz2 asset fragments
+to one private, atomically published, SHA-256-verified SF2 file. Original SF2:
+148,398,306 bytes; compressed assets: 118,540,984 bytes. Java never holds the entire
+SF2 byte array. Later uses reuse the verified cache. The preferred libVLC
+FluidLite backend interprets actual GM presets, note programs and channel-10
+percussion. Core/portable-only synthesis remains separately available. A caller
+may instead configure a caller-owned SF2 file with `setMidiSoundFont(file)`;
+diagnostics identify the supplied filename, rather than claiming the bundled bank.
+
+LibVLC, FluidR3 and bzip2 dependencies retain their licenses/notices and pinned
+source references; see `docs/third-party.md`. Outside Termux the callback bridge
+has an Android CMake/NDK build. The Termux build packages its arm64 bridge. No
+native desktop/iOS binding or full codec-conformance guarantee is claimed.

@@ -9,8 +9,13 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isReturnDefaultValues = true }
+    androidResources { noCompress += "bz2" }
+    if (!file("/data/data/com.termux/files/usr/bin/clang").isFile) {
+        externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
+    }
     if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
         sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("openmptNative"))
+        sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("vlcPcmNative"))
     }
 }
 
@@ -21,7 +26,13 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
         commandLine("sh", file("src/main/cpp/build-openmpt.sh"),
             layout.buildDirectory.dir("openmptNative").get().asFile, System.getProperty("java.home"))
     }
-    tasks.named("preBuild").configure { dependsOn(buildOpenMptNative) }
+    val buildVlcPcmNative = tasks.register<Exec>("buildVlcPcmNative") {
+        inputs.files("src/main/cpp/vlc_pcm_jni.c", "src/main/cpp/build-vlc-pcm.sh")
+        outputs.dir(layout.buildDirectory.dir("vlcPcmNative"))
+        commandLine("sh", file("src/main/cpp/build-vlc-pcm.sh"),
+            layout.buildDirectory.dir("vlcPcmNative").get().asFile, System.getProperty("java.home"))
+    }
+    tasks.named("preBuild").configure { dependsOn(buildOpenMptNative, buildVlcPcmNative) }
     tasks.withType<Test>().configureEach {
         dependsOn(buildOpenMptNative)
         inputs.dir(layout.buildDirectory.dir("openmptNative"))
@@ -31,5 +42,9 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
 
 dependencies {
     api(project(":audio-core"))
+    val localVlc = providers.gradleProperty("libVlcAar").orNull
+    if (localVlc == null) implementation("org.videolan.android:libvlc-all:3.7.7")
+    else implementation(files(localVlc))
+    implementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation("junit:junit:4.13.2")
 }

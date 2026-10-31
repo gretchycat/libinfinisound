@@ -98,3 +98,24 @@ inputs, including standard WAVE, and all nine original audio controls retain
 identical PCM SHA-256 hashes. Native playback/seek/gapless validation is recorded
 by the consuming application's checkpoint; JVM checks do not establish sound
 output on a device.
+
+## Additional libVLC codecs and bundled FluidR3 (2026-10-31)
+
+Five codec-ordering cases bring the portable core to 100 passing cases. They
+preserve the existing backend winner, require the extra decoder only after
+rejection, prefer the selected synthesizer and prohibit either native backend
+in `PORTABLE_ONLY`, while respecting explicit `PORTABLE_FIRST`. Standalone Android and portable-only builds pass.
+
+The consuming Android runtime check decodes WMA, RealAudio, WavPack, TTA,
+AC-3, E-AC-3 and DTS through libVLC, retaining Android Vorbis/Opus controls. WMA
+and RA frame counts match independent FFmpeg decoding. It verifies exact PCM
+identity across short common-input reads, balanced handle ownership, actual
+WAVE bytes and frame count, invalid-input rejection, cancellation, repeated
+close/reopen and prompt close while the bounded PCM queue is full. It opens no audio output device.
+
+The same helper runs the actual APK AssetManager/bzip2 installer, checks the
+original 148,398,306-byte bank's SHA-256, distinguishes piano/flute and
+same-pitch piano/percussion samples, and reuses the cached bank with no partial
+file left over. MIDI labels identify the actual configured bank filename.
+The consuming checkpoint records exact APK checksums and native results. Handset
+sound, skipped-queue behavior and archive/provider acceptance remain separate.

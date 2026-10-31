@@ -8,3 +8,25 @@
 - ALAC: the existing bundled Peter McQuillan implementation with its source notices retained.
 
 FLAC test fixtures use FFmpeg/libFLAC as independent encoders; those tools are not runtime dependencies.
+
+## Android PCM fallback and bundled MIDI bank
+
+- `org.videolan.android:libvlc-all:3.7.7`: LGPL-2.1-or-later, the same artifact as
+  InfiniVideo. The Sound adapter dynamically calls libVLC's public media-input
+  and decoded-PCM callbacks; it opens no device output. Codec objects remain
+  inside the adapter. `libVlcAar` permits a compatible source-built replacement.
+  Notices and upstream source references are packaged in `third-party/libvlc-pcm`.
+- FluidR3_GM.sf2, Fluid 3.1, copyright Frank Wen, MIT. Unmodified data from the
+  [Debian source archive](https://deb.debian.org/debian/pool/main/f/fluid-soundfont/fluid-soundfont_3.1.orig.tar.gz)
+  is compressed losslessly as one bzip2 stream split into three asset fragments.
+  The original README, full MIT license and original SHA-256 are packaged in
+  `third-party/fluidr3`. Synthesis uses libVLC's bundled FluidLite implementation;
+  the earlier sample-preview reader is not used to interpret the GM bank.
+- Apache Commons Compress 1.27.1 provides streamed bzip2 decompression, with
+  Commons IO 2.16.1, Codec 1.17.1 and Lang 3.16.0 dependencies (Apache-2.0).
+  Their original LICENSE/NOTICE files are packaged under `third-party/commons-*`.
+
+All above asset paths are relative to `audio-processing/src/main/assets`.
+The Android bridge builds with CMake/NDK outside Termux; the existing Termux
+source build compiles the bridge for arm64. This does not claim implemented
+Linux, Windows, macOS or iOS backend packaging.

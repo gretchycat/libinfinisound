@@ -9,10 +9,17 @@ import java.io.File
 
 /** Default codec composition. It has no dependency on a viewer, storage runtime or audio output. */
 object AudioProcessing : AudioProcessor {
-    private val files = AudioFileProcessor(listOf(AndroidPcmDecoder))
-    private val platformExtensions = setOf("ogg", "oga", "opus", "mka", "weba", "mp4", "amr", "awb")
+    private val files = AudioFileProcessor(listOf(AndroidPcmDecoder), listOf(LibVlcPcmDecoder), listOf(LibVlcPcmDecoder.Midi))
+    private val platformExtensions = setOf("ogg", "oga", "opus", "mka", "weba", "mp4", "amr", "awb", "wma", "ra", "ape", "ac3", "dts", "tta", "mlp", "thd", "eac3", "wv", "a52")
     val supportedExtensions: Set<String> get() = PortableAudioProcessing.supportedExtensions + platformExtensions
     val metadata: AudioMetadataReader = AndroidAudioMetadataReader
+
+    /** Configure a caller-owned font, or lazily install the bundled font from Android assets. */
+    fun setMidiSoundFont(file: File) { LibVlcPcmDecoder.midiSoundFont = { file } }
+    fun initialize(context: Context) {
+        val app = context.applicationContext
+        LibVlcPcmDecoder.midiSoundFont = { BundledMidiSoundFont.file(app) }
+    }
 
     override fun isSupported(probe: AudioProbe): Boolean = PortableAudioProcessing.isSupported(probe) || probe.normalizedExtension in platformExtensions
     override fun decode(request: AudioDecodeRequest, observer: AudioDecodeObserver?): AudioDecodeResult? =
@@ -57,8 +64,11 @@ object AudioProcessing : AudioProcessor {
     }
 
     /** The host stages only when a legacy renderer requires a file/companion-file context. */
-    fun requiresLocalFileForPlayback(source: io.github.gretchycat.infinistream.SourceResource): Boolean =
-        PortableAudioProcessing.prefersBufferedDecode(com.infinifolder.audio.StreamAudioInput(source).probe())
+    fun requiresLocalFileForPlayback(source: io.github.gretchycat.infinistream.SourceResource): Boolean {
+        val probe = StreamAudioInput(source).probe()
+        if (LibVlcPcmDecoder.midiSoundFont != null && com.infinifolder.audio.tracker.MidiSequencer.isMidi(probe.bytes)) return false
+        return PortableAudioProcessing.prefersBufferedDecode(probe)
+    }
 
     /** Borrowed reopenable input; no implicit encoded-source download or output device access. */
     fun openPlaybackSource(source: io.github.gretchycat.infinistream.SourceResource, scratch: File,
