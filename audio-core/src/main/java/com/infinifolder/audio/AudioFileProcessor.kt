@@ -86,6 +86,13 @@ class AudioFileProcessor @JvmOverloads constructor(platformDecoders: List<PcmDec
         preference: DecoderPreference = DecoderPreference.PLATFORM_FIRST,
         observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false },
         metadata: io.github.gretchycat.infinistream.StreamMetadata = io.github.gretchycat.infinistream.StreamMetadata()
+    ): AudioWaveSource = openWaveSource(input,scratch,PcmOutputOptions(),preference,observer,cancelled,metadata)
+
+    /** Same decoder/fallback/cache contracts with explicitly negotiated output packing. */
+    fun openWaveSource(input: AudioInput, scratch: File, output: PcmOutputOptions,
+        preference: DecoderPreference = DecoderPreference.PLATFORM_FIRST,
+        observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false },
+        metadata: io.github.gretchycat.infinistream.StreamMetadata = io.github.gretchycat.infinistream.StreamMetadata()
     ): AudioWaveSource {
         require((input as? FileAudioInput)?.file?.canonicalFile != scratch.canonicalFile) { "PCM output must differ from source" }
         val sourceClosed = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -97,7 +104,7 @@ class AudioFileProcessor @JvmOverloads constructor(platformDecoders: List<PcmDec
                 if (isCancelled()) throw InterruptedIOException("Audio preparation cancelled")
                 var stream: PcmStream? = null
                 try {
-                    val pcm = openDecoder(decoder, input)
+                    val pcm = openDecoder(decoder, input).forOutput(output)
                     stream = pcm
                     if (pcm.format.totalFrames != null) {
                         val result = AudioPreparation(pcm.format, pcm.decoderName ?: decoder.name, pcm.sourceFormat)
@@ -107,7 +114,7 @@ class AudioFileProcessor @JvmOverloads constructor(platformDecoders: List<PcmDec
                             observer?.warning(result.decoder, error)
                             // A decoder can fail after its initial block. Retain the full preparation
                             // fallback policy before returning bytes for the failing request.
-                            val prepared = prepare(input, scratch, preference, observer, isCancelled)
+                            val prepared = prepare(input, scratch, output, preference, observer, isCancelled)
                             io.github.gretchycat.infinistream.FileSourceResource(scratch).open() to prepared
                         }
                     }
@@ -134,6 +141,11 @@ class AudioFileProcessor @JvmOverloads constructor(platformDecoders: List<PcmDec
         preference: DecoderPreference = DecoderPreference.PLATFORM_FIRST,
         observer: AudioPreparationObserver? = null,
         cancelled: () -> Boolean = { false }
+    ): AudioPreparation = prepare(input,destination,PcmOutputOptions(),preference,observer,cancelled)
+
+    fun prepare(input: AudioInput, destination: File, output: PcmOutputOptions,
+        preference: DecoderPreference = DecoderPreference.PLATFORM_FIRST,
+        observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false }
     ): AudioPreparation {
         require((input as? FileAudioInput)?.file?.canonicalFile != destination.canonicalFile) { "PCM output must differ from source" }
         try {
@@ -143,7 +155,7 @@ class AudioFileProcessor @JvmOverloads constructor(platformDecoders: List<PcmDec
                 checkDecodeCancellation()
                 if (cancelled()) throw InterruptedIOException("Audio preparation cancelled")
                 try {
-                    val result = openDecoder(decoder,input).use { stream ->
+                    val result = openDecoder(decoder,input).forOutput(output).use { stream ->
                         val metrics = PcmSignalAccumulator()
                         val format = PcmWaveWriter.write(stream, destination, metrics::add, cancelled)
                         AudioPreparation(format, stream.decoderName ?: decoder.name, stream.sourceFormat, metrics.finish(format))

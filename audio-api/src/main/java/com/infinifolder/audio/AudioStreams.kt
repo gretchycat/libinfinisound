@@ -17,6 +17,11 @@ data class PcmFormat(val sampleRate: Int, val channels: Int, val totalFrames: Lo
     val durationMs: Long? get() = totalFrames?.let { it * 1000L / sampleRate }
 }
 
+/** Optional output packing; channel counts above two are preserved, not implicitly mixed. */
+data class PcmOutputOptions(val bitsPerSample: Int? = null, val duplicateMono: Boolean = false) {
+    init { require(bitsPerSample == null || bitsPerSample in setOf(16, 24, 32)) }
+}
+
 /** Signed interleaved PCM, left-aligned in 32-bit integers; [PcmFormat.bitsPerSample] preserves source precision. Reads contain complete frames; silence is never EOF. */
 interface PcmStream : AutoCloseable {
     val format: PcmFormat

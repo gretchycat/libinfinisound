@@ -157,3 +157,12 @@ also corrects archive URI identity and playlist-relative path resolution, retain
 known queue metadata and uses decoded timing during gapless promotion. Builds and
 remaining handset acceptance are recorded by the consumer. No automated test run
 or new audible verification is implied.
+
+## Cast consumer migration (checkpoint 28)
+
+Additive output-packing APIs preserve existing entry points and default behavior.
+The consumer requests the prior Cast 16-bit/mono-duplication policy while using
+AudioWaveSource rather than whole-track encoded/PCM/WAV arrays. Frame-seekable
+streams retain their positioning adapter; lazy failure fallback retains packing
+options. Integrated and standalone compilation are recorded by the consumer.
+No automated tests or real Cast receiver checks are implied by these builds.

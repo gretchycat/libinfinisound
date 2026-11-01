@@ -195,6 +195,20 @@ used for both metadata and playback endpoints; this does not implement NSF2's
 additional CPU/IRQ features. Truly untimed files retain the declared cap.
 Platform metadata and fallback inspection have separate bounded read budgets.
 
+## Explicit PCM output packing
+
+`PcmOutputOptions` requests 16/24/32-bit WAVE packing and optional mono duplication.
+`AudioFileProcessor.openWaveSource`/`prepare` have additive overloads for these
+options; existing signatures and default precision/channel behavior remain.
+Android `AudioProcessing.openWaveSource` accepts a File or common SourceResource
+with the same options. Conversion uses bounded PCM blocks, preserves rate/frame
+count and optional exact frame positioning, and keeps multichannel streams intact.
+Known frame totals retain lazy disk caching; unknown totals retain full disk
+preparation. Decoder fallback applies the same output policy before negotiation.
+The consuming Cast HTTP adapter uses this output instead of materializing encoded
+input, PCM and WAV arrays. Networking, receiver policy, source leases and cache
+lifetimes remain in the host. No audio device is opened by this API.
+
 The optional FluidLite/GME symbols are resolved at runtime and fail explicitly
 when absent from a replacement AAR. Portable-only policy excludes these native
 backends. Desktop/iOS packaging is still separate work.

@@ -53,6 +53,16 @@ object AudioProcessing : AudioProcessor {
         files.openWaveSource(FileAudioInput(source), scratch, observer = observer, cancelled = cancelled,
             metadata = io.github.gretchycat.infinistream.FileSourceResource(source).metadata)
 
+    /** PCM WAVE output with explicit packing; never opens an audio output device. */
+    fun openWaveSource(source: File, scratch: File, output: PcmOutputOptions,
+        cancelled: () -> Boolean = { false }): AudioWaveSource =
+        files.openWaveSource(FileAudioInput(source),scratch,output,cancelled = cancelled,
+            metadata = io.github.gretchycat.infinistream.FileSourceResource(source).metadata)
+
+    fun openWaveSource(source: io.github.gretchycat.infinistream.SourceResource, scratch: File,
+        output: PcmOutputOptions, cancelled: () -> Boolean = { false }): AudioWaveSource =
+        files.openWaveSource(StreamAudioInput(source),scratch,output,cancelled = cancelled,metadata = source.metadata)
+
     /** Playback chooses the measured fast portable MPEG path, with Android fallback inside the library. */
     fun openPlaybackSource(source: File, scratch: File,
         observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false }): AudioWaveSource {
