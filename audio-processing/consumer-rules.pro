@@ -10,3 +10,5 @@
 -keep class com.infinifolder.audio.GameMusicNative { *; }
 
 -keep class com.infinifolder.audio.LibVlcAvNative { *; }
+
+-keep class com.infinifolder.audio.SmafNative { *; }

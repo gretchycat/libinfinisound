@@ -1,7 +1,9 @@
 package com.infinifolder.audio
 
+import com.infinifolder.audio.guitarpro.GuitarPro3
 import com.infinifolder.audio.midi.MidiTimeline
 import com.infinifolder.audio.tracker.MidiSequencer
+import com.infinifolder.audio.stream.probe
 import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -10,9 +12,10 @@ import java.io.InterruptedIOException
 internal object MidiPcmDecoder : PcmDecoder {
     override val name = "libVLC.FluidLite"
     @Volatile var soundFont: (() -> File)? = null
-    override fun matches(input: AudioInput, probe: AudioProbe) = soundFont != null && MidiSequencer.isMidi(probe.bytes)
+    override fun matches(input: AudioInput, probe: AudioProbe) = soundFont != null && (MidiSequencer.isMidi(probe.bytes) || GuitarPro3.matches(probe.bytes))
     override fun open(input: AudioInput): PcmStream {
-        val timeline = MidiTimeline.read(input)
+        val guitarPro = GuitarPro3.matches(input.probe().bytes)
+        val timeline = if (guitarPro) GuitarPro3.read(input).timeline else MidiTimeline.read(input)
         val font = soundFont?.invoke() ?: throw IOException("No MIDI SoundFont configured")
         if (!font.isFile || !font.canRead()) throw IOException("MIDI SoundFont is unreadable")
         return object : PcmStream {
@@ -22,7 +25,7 @@ internal object MidiPcmDecoder : PcmDecoder {
             private var released = false
             private val buffer = ShortArray(8192)
             override val decoderName = "$name(${font.nameWithoutExtension})"
-            override val sourceFormat = "MIDI"
+            override val sourceFormat = if (guitarPro) "Guitar Pro 3" else "MIDI"
             override val format = PcmFormat(MidiTimeline.SAMPLE_RATE, 2, timeline.totalFrames)
             @Synchronized override fun read(samples: IntArray, offset: Int, length: Int): Int {
                 require(offset >= 0 && length >= 0 && length <= samples.size-offset)

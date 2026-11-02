@@ -12,7 +12,7 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "libinfinisound"
-include(":audio-api", ":audio-core")
+include(":audio-api", ":audio-core", ":audio-guitarpro")
 if (!providers.gradleProperty("portableOnly").isPresent) include(":audio-processing")
 
 // A standalone source build uses the sibling pinned by the consuming workspace.

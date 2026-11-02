@@ -89,7 +89,7 @@ internal object AndroidAudioMetadataReader : AudioMetadataReader {
         val isTracker = ext in setOf(
             "mod", "s3m", "xm", "it", "med", "okt", "mtm", "669", "far", "amf", "dsm", "ult", "psm", "umx"
         )
-        val isMidi = ext in setOf("mid", "midi", "kar", "rmi", "smf")
+        val isMidi = ext in setOf("mid", "midi", "kar", "rmi", "smf", "gp3", "mmf", "smaf")
         val isChiptune = ext in setOf(
             "sid", "nsf", "spc", "vgm", "vgz", "gym", "ay", "ym", "gbs", "hes", "kss", "dro", "imf"
         )

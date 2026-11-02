@@ -212,3 +212,22 @@ lifetimes remain in the host. No audio device is opened by this API.
 The optional FluidLite/GME symbols are resolved at runtime and fail explicitly
 when absent from a replacement AAR. Portable-only policy excludes these native
 backends. Desktop/iOS packaging is still separate work.
+
+## Ringtone and DOS music additions
+
+Android processing recognizes MMF/SMAF scores by `MMMD`, using the source-built
+Apache-2.0 engine in `audio-processing/src/main/cpp/third_party/smaf`. It exposes
+bounded 44.1 kHz stereo PCM with explicit ownership and a fixed release tail.
+Preset timbres are ROM-free approximations; unsupported MA-7/voice-bank variants
+are documented beside the pinned source. The NDK and Termux builds compile the
+engine; no precompiled engine binary is checked in.
+
+3GP/3GPP/3G2 audio tracks use the existing Android/FFmpeg backends. The optional
+`audio-guitarpro` JVM module parses GP3 scores into the MIDI timeline consumed by
+the existing SoundFont synthesizer; its TuxGuitar source/license are retained.
+Other Guitar Pro versions are not advertised. `AudioInput.readEncodedBytes`
+provides explicitly bounded score materialization through Stream.
+
+`AnsiMusic.open(strings)` returns finite mono PC-speaker-style PCM for BASIC
+PLAY-style ANSI Music commands. It never opens an output device. The host owns
+PCM caching, playback, audio focus and lifetime.

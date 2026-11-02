@@ -9,8 +9,8 @@ import java.io.File
 
 /** Default codec composition. It has no dependency on a viewer, storage runtime or audio output. */
 object AudioProcessing : AudioProcessor {
-    private val files = AudioFileProcessor(listOf(AndroidPcmDecoder), listOf(LibVlcAvDecoder, LibVlcPcmDecoder), listOf(MidiPcmDecoder, GameMusicPcmDecoder))
-    private val platformExtensions = setOf("ogg", "oga", "opus", "mka", "weba", "mp4", "amr", "awb", "wma", "ra", "ape", "ac3", "dts", "tta", "mlp", "thd", "eac3", "wv", "a52")
+    private val files = AudioFileProcessor(listOf(AndroidPcmDecoder), listOf(LibVlcAvDecoder, LibVlcPcmDecoder), listOf(SmafPcmDecoder, MidiPcmDecoder, GameMusicPcmDecoder))
+    private val platformExtensions = setOf("ogg", "oga", "opus", "mka", "weba", "mp4", "3gp", "3gpp", "3g2", "mmf", "smaf", "gp3", "amr", "awb", "wma", "ra", "ape", "ac3", "dts", "tta", "mlp", "thd", "eac3", "wv", "a52")
     val supportedExtensions: Set<String> get() = PortableAudioProcessing.supportedExtensions + platformExtensions
     val metadata: AudioMetadataReader = AndroidAudioMetadataReader
 
@@ -21,7 +21,7 @@ object AudioProcessing : AudioProcessor {
         MidiPcmDecoder.soundFont = { BundledMidiSoundFont.file(app) }
     }
 
-    override fun isSupported(probe: AudioProbe): Boolean = PortableAudioProcessing.isSupported(probe) || probe.normalizedExtension in platformExtensions
+    override fun isSupported(probe: AudioProbe): Boolean = PortableAudioProcessing.isSupported(probe) || probe.normalizedExtension in platformExtensions || SmafPcmDecoder.hasSignature(probe.bytes) || com.infinifolder.audio.guitarpro.GuitarPro3.matches(probe.bytes)
     override fun decode(request: AudioDecodeRequest, observer: AudioDecodeObserver?): AudioDecodeResult? =
         files.decodeBuffered(com.infinifolder.audio.stream.MemoryAudioInput(request.bytes,
             "source.${request.probe.normalizedExtension}", request.file), observer = observer)
@@ -127,6 +127,12 @@ object AudioProcessing : AudioProcessor {
         // Android cannot inspect these event/emulation formats. Timing does not need PCM or a bank.
         if (com.infinifolder.audio.tracker.MidiSequencer.isMidi(probe.bytes))
             return AudioTags(null,null,null,com.infinifolder.audio.midi.MidiTimeline.read(input).durationMs.toString())
+        if (com.infinifolder.audio.guitarpro.GuitarPro3.matches(probe.bytes)) {
+            val score = com.infinifolder.audio.guitarpro.GuitarPro3.read(input)
+            return AudioTags(score.title,score.artist,null,score.timeline.durationMs.toString())
+        }
+        if (SmafPcmDecoder.matches(input,probe))
+            return AudioTags(null,null,null,SmafPcmDecoder.duration(input).toString())
         if (GameMusicPcmDecoder.matches(input,probe))
             return AudioTags(null,null,null,GameMusicPcmDecoder.inspectDuration(input)?.toString())
         val tags = runCatching { input.open().use { bytes ->
@@ -146,6 +152,12 @@ object AudioProcessing : AudioProcessor {
     private fun inspectDuration(input: AudioInput): Long? {
         PortableAudioDuration.read(input)?.let { return it }
         val probe = input.probe()
+        if (com.infinifolder.audio.guitarpro.GuitarPro3.matches(probe.bytes)) {
+            val score = com.infinifolder.audio.guitarpro.GuitarPro3.read(input)
+            return score.timeline.durationMs
+        }
+        if (SmafPcmDecoder.matches(input,probe))
+            return SmafPcmDecoder.duration(input)
         if (GameMusicPcmDecoder.matches(input,probe)) return GameMusicPcmDecoder.inspectDuration(input)
         // Many portable legacy containers (AIFF, CAF, AU, VOC, DSD, etc.) play
         // successfully but Android supplies no timing for them. Let the same

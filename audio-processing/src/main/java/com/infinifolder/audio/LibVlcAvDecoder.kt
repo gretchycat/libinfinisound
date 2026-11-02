@@ -7,7 +7,7 @@ internal object LibVlcAvDecoder : PcmDecoder {
     override val name = "libVLC.FFmpeg"
     override fun matches(input: AudioInput, probe: AudioProbe) = probe.normalizedExtension in setOf(
         "wma","ra","ape","ac3","eac3","dts","tta","wv","mlp","thd","a52",
-        "ogg","oga","opus","mka","weba","mp4","amr","awb")
+        "ogg","oga","opus","mka","weba","mp4","3gp","3gpp","3g2","mmf","smaf","amr","awb") || SmafPcmDecoder.hasSignature(probe.bytes)
     override fun open(input: AudioInput): PcmStream = Stream(input)
     fun inspectDuration(input: AudioInput): Long? = Stream(input).use { it.duration() }
     private class Stream(input: AudioInput) : PcmStream {

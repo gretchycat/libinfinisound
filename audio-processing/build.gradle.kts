@@ -16,6 +16,7 @@ android {
     if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
         sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("openmptNative"))
         sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("vlcPcmNative"))
+        sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("smafNative"))
     }
 }
 
@@ -32,7 +33,15 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
         commandLine("sh", file("src/main/cpp/build-vlc-pcm.sh"),
             layout.buildDirectory.dir("vlcPcmNative").get().asFile, System.getProperty("java.home"))
     }
-    tasks.named("preBuild").configure { dependsOn(buildOpenMptNative, buildVlcPcmNative) }
+    val buildSmafNative = tasks.register<Exec>("buildSmafNative") {
+        inputs.file("src/main/cpp/smaf_jni.cpp")
+        inputs.file("src/main/cpp/build-smaf.sh")
+        inputs.dir("src/main/cpp/third_party/smaf")
+        outputs.dir(layout.buildDirectory.dir("smafNative"))
+        commandLine("sh", file("src/main/cpp/build-smaf.sh"),
+            layout.buildDirectory.dir("smafNative").get().asFile, System.getProperty("java.home"))
+    }
+    tasks.named("preBuild").configure { dependsOn(buildOpenMptNative, buildVlcPcmNative, buildSmafNative) }
     tasks.withType<Test>().configureEach {
         dependsOn(buildOpenMptNative)
         inputs.dir(layout.buildDirectory.dir("openmptNative"))
@@ -42,6 +51,7 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
 
 dependencies {
     api(project(":audio-core"))
+    implementation(project(":audio-guitarpro"))
     val localVlc = providers.gradleProperty("libVlcAar").orNull
     if (localVlc == null) implementation("org.videolan.android:libvlc-all:3.7.7")
     else implementation(files(localVlc))
