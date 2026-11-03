@@ -231,3 +231,9 @@ provides explicitly bounded score materialization through Stream.
 `AnsiMusic.open(strings)` returns finite mono PC-speaker-style PCM for BASIC
 PLAY-style ANSI Music commands. It never opens an output device. The host owns
 PCM caching, playback, audio focus and lifetime.
+The default tone is a rounded square/sine blend: a fundamental with subdued third
+and fifth harmonics, normalized to the previous peak level. A shared interpolated
+wavetable avoids per-sample trigonometry. Up to 5 ms attack and 8 ms release soften
+note boundaries within the existing gate; note/rest durations and articulation
+frames are unchanged. The host APK builds with this change; listening acceptance
+on a handset remains pending. No additional tests were added or run.

@@ -4,10 +4,27 @@ import java.io.IOException
 import java.io.InterruptedIOException
 import kotlin.math.pow
 import kotlin.math.roundToLong
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.abs
+import kotlin.math.PI
 
-/** BBS ANSI Music / BASIC PLAY melody syntax, rendered as a mono PC-speaker-style square wave. */
+/** BBS ANSI Music / BASIC PLAY melody syntax with a softened PC-speaker timbre. */
 object AnsiMusic {
     private const val RATE=44100
+    private const val TABLE_SIZE=2048
+    // A sine with restrained odd harmonics keeps the square wave's character
+    // without its sharp edges. The retained harmonics stay below Nyquist throughout
+    // the parser's supported note range. Normalize once to the existing peak.
+    private val waveform by lazy {
+        val table=DoubleArray(TABLE_SIZE) {index ->
+            val angle=2*PI*index/TABLE_SIZE
+            sin(angle)+0.20*sin(3*angle)+0.06*sin(5*angle)
+        }
+        val peak=table.maxOf {abs(it)}
+        for(index in table.indices)table[index]/=peak
+        table
+    }
     private data class Tone(val start:Long,val end:Long,val gate:Long,val frequency:Double)
     fun open(strings:List<String>):PcmStream {
         val tones=ArrayList<Tone>()
@@ -73,12 +90,24 @@ object AnsiMusic {
                 if(length==0)return 0
                 if(frame>=format.totalFrames!!)return -1
                 val count=minOf(length.toLong(),format.totalFrames!!-frame).toInt()
+                val table=waveform
                 for(i in 0 until count) {
                     if(i and 1023==0)check()
                     while(index<tones.lastIndex && frame>=tones[index].end){index++;phase=0.0}
                     val tone=tones[index]
                     samples[offset+i]=if(tone.frequency>0 && frame<tone.gate) {
-                        val sample=if(phase<0.5) 4096 else -4096
+                        val position=phase*TABLE_SIZE
+                        val slot=position.toInt()
+                        val fraction=position-slot
+                        val wave=table[slot]+(table[(slot+1)%TABLE_SIZE]-table[slot])*fraction
+                        // Keep the existing gate/end frames, including short notes
+                        // and rests; soften only the active samples at each edge.
+                        val active=tone.gate-tone.start
+                        val attack=minOf(RATE/200L,active/2) // Up to 5 ms.
+                        val release=minOf(RATE/125L,active/2) // Up to 8 ms.
+                        val fadeIn=if(attack>0)minOf(1.0,(frame-tone.start).toDouble()/attack) else 1.0
+                        val fadeOut=if(release>0)minOf(1.0,(tone.gate-frame-1).toDouble()/release) else 1.0
+                        val sample=(4096*wave*minOf(fadeIn,fadeOut)).roundToInt().coerceIn(-4096,4096)
                         phase+=tone.frequency/RATE;phase-=kotlin.math.floor(phase)
                         sample shl 16
                     } else 0
