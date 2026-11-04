@@ -107,7 +107,7 @@ class PlaybackPcmAnalyzer(
                 } else if (outputId >= 0) {
                     lastOutputUs = info.presentationTimeUs
                     val now = System.nanoTime()
-                    if (info.size > 0 && info.presentationTimeUs >= targetUs - 120_000 && now - lastEmitNs >= 65_000_000L) {
+                    if (info.size > 0 && info.presentationTimeUs >= targetUs - 120_000 && now - lastEmitNs >= 33_333_333L) {
                         val output = decoder.getOutputBuffer(outputId)
                         if (output != null && channels in 1..8 && rate > 0) {
                             output.position(info.offset); output.limit(info.offset + info.size)
@@ -137,41 +137,69 @@ class PlaybackPcmAnalyzer(
         val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
         if (rate <= 0 || channels !in 1..8) return
         val encoding = if (format.containsKey(MediaFormat.KEY_PCM_ENCODING)) format.getInteger(MediaFormat.KEY_PCM_ENCODING) else AudioFormat.ENCODING_PCM_16BIT
+        val bytesPerSample = bytesPerSample(encoding)
+        if (bytesPerSample <= 0) return
         val buffer = ByteBuffer.allocateDirect(262144).order(ByteOrder.nativeOrder())
         var lastPositionUs = -1L
+        var cachedSampleTimeUs = -1L
+        var cachedSamples = FloatArray(0)
         while (!stopped.get()) {
             val (playing, positionMs) = playback()
             if (!playing) { Thread.sleep(60); continue }
             val targetUs = positionMs.coerceAtLeast(0) * 1000
             if (lastPositionUs < 0 || targetUs < lastPositionUs - 300_000 || targetUs > lastPositionUs + 800_000) {
                 extractor.seekTo(targetUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                cachedSampleTimeUs = -1L
+                cachedSamples = FloatArray(0)
             }
             val sampleUs = extractor.sampleTime
-            if (sampleUs < 0) { Thread.sleep(80); lastPositionUs = -1; continue }
-            if (sampleUs > targetUs + 120_000) { Thread.sleep(20); continue }
-            buffer.clear()
-            val count = extractor.readSampleData(buffer, 0)
-            if (count < 0) { Thread.sleep(80); lastPositionUs = -1; continue }
-            lastPositionUs = sampleUs
-            if (sampleUs >= targetUs - 120_000) {
-                buffer.position(0); buffer.limit(count)
-                val samples = readPcm(buffer, encoding, channels)
-                if (samples.isNotEmpty()) onSamples(samples, channels, rate)
-                Thread.sleep(65)
+            if (sampleUs < 0) {
+                Thread.sleep(80); lastPositionUs = -1; cachedSampleTimeUs = -1L; cachedSamples = FloatArray(0)
+                continue
             }
-            extractor.advance()
+            if (sampleUs > targetUs + 120_000) { Thread.sleep(20); continue }
+            if (sampleUs != cachedSampleTimeUs) {
+                buffer.clear()
+                val count = extractor.readSampleData(buffer, 0)
+                if (count < 0) {
+                    Thread.sleep(80); lastPositionUs = -1; cachedSampleTimeUs = -1L; cachedSamples = FloatArray(0)
+                    continue
+                }
+                buffer.position(0); buffer.limit(count)
+                val sampleFrames = count / (bytesPerSample * channels)
+                cachedSamples = readPcm(buffer, encoding, channels, sampleFrames)
+                cachedSampleTimeUs = sampleUs
+            }
+            val frames = cachedSamples.size / channels
+            val targetFrame = ((targetUs - sampleUs) * rate / 1_000_000L).coerceAtLeast(0L)
+            if (frames == 0 || targetFrame >= frames) {
+                extractor.advance()
+                cachedSampleTimeUs = -1L
+                cachedSamples = FloatArray(0)
+                continue
+            }
+            val windowFrames = minOf(2048, frames)
+            val windowStart = targetFrame.toInt().coerceAtMost((frames - windowFrames).coerceAtLeast(0))
+            val firstSample = windowStart * channels
+            val window = cachedSamples.copyOfRange(firstSample, firstSample + windowFrames * channels)
+            onSamples(window, channels, rate)
+            lastPositionUs = targetUs
+            Thread.sleep(33)
         }
     }
 
-    private fun readPcm(buffer: ByteBuffer, encoding: Int, channels: Int): FloatArray {
-        val bytes = when (encoding) {
-            AudioFormat.ENCODING_PCM_8BIT -> 1
-            AudioFormat.ENCODING_PCM_16BIT -> 2
-            AudioFormat.ENCODING_PCM_FLOAT, AudioFormat.ENCODING_PCM_32BIT -> 4
-            AudioFormat.ENCODING_PCM_24BIT_PACKED -> 3
-            else -> return FloatArray(0)
-        }
-        val count = minOf(buffer.remaining() / bytes, 4096 * channels)
+    private fun bytesPerSample(encoding: Int): Int = when (encoding) {
+        AudioFormat.ENCODING_PCM_8BIT -> 1
+        AudioFormat.ENCODING_PCM_16BIT -> 2
+        AudioFormat.ENCODING_PCM_FLOAT, AudioFormat.ENCODING_PCM_32BIT -> 4
+        AudioFormat.ENCODING_PCM_24BIT_PACKED -> 3
+        else -> 0
+    }
+
+    private fun readPcm(buffer: ByteBuffer, encoding: Int, channels: Int, maxFrames: Int = 4096): FloatArray {
+        val bytes = bytesPerSample(encoding)
+        if (bytes <= 0) return FloatArray(0)
+        val count = minOf(buffer.remaining() / bytes, maxFrames * channels)
         val out = FloatArray(count - count % channels)
         for (i in out.indices) {
             out[i] = when (encoding) {

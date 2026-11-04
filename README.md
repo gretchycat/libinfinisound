@@ -197,17 +197,33 @@ Platform metadata and fallback inspection have separate bounded read budgets.
 
 ## Explicit PCM output packing
 
-`PcmOutputOptions` requests 16/24/32-bit WAVE packing and optional mono duplication.
+`PcmOutputOptions` requests 16/24/32-bit WAVE packing, optional mono duplication,
+an optional output sample rate and an explicit mono/stereo channel count.
 `AudioFileProcessor.openWaveSource`/`prepare` have additive overloads for these
 options; existing signatures and default precision/channel behavior remain.
 Android `AudioProcessing.openWaveSource` accepts a File or common SourceResource
-with the same options. Conversion uses bounded PCM blocks, preserves rate/frame
-count and optional exact frame positioning, and keeps multichannel streams intact.
+with the same options. Without rate/channel overrides, conversion preserves the
+source rate, frame count and multichannel layout. Explicit rate conversion uses
+bounded linear-interpolation PCM blocks; channel conversion can duplicate mono,
+average to mono or mix to stereo. Output frame counts and supported frame seeks
+are translated to the selected rate. Existing source calls retain their defaults;
+dependents should rebuild against the expanded options data class.
 Known frame totals retain lazy disk caching; unknown totals retain full disk
 preparation. Decoder fallback applies the same output policy before negotiation.
 The consuming Cast HTTP adapter uses this output instead of materializing encoded
 input, PCM and WAV arrays. Networking, receiver policy, source leases and cache
 lifetimes remain in the host. No audio device is opened by this API.
+
+InfiniFolder's continuous Cast path requests 48 kHz stereo signed 16-bit PCM and
+composes track sources in the host. RIFF length limits, track selection, network
+ranges, receiver fallback and session failures remain host policy. Receiver
+acceptance is separate from library compilation.
+
+`PlaybackPcmAnalyzer` follows the playback clock within a cached raw PCM packet,
+emitting bounded windows at roughly 30 Hz rather than advancing past the packet
+after its first window. Compressed analysis retains Android codec decoding and
+position gating. These changes do not establish physical audio-output or receiver
+acceptance.
 
 The optional FluidLite/GME symbols are resolved at runtime and fail explicitly
 when absent from a replacement AAR. Portable-only policy excludes these native
