@@ -4,7 +4,14 @@
 
 libinfinistream is the platform-neutral transport/metadata foundation for the library family. StreamAudioInput adapts its known-length positional SourceResources, PcmStreamHandle exposes actual typed PCM metadata, and AudioStreamProcessor declares encoded/PCM ports and pull ownership. FileAudioInput uses the shared positional implementation while retaining legacy file hints. Store opens resources; Vault is used only for containers; Sound consumes their sources without depending on either implementation or the application. Existing AudioInput/PcmStream APIs remain available during migration. JVM contracts do not imply native iOS binaries.
 
-Updated 2026-10-30 for the portable codec and Android adapter increment.
+Updated 2026-11-04 for installed-handler discovery and linked dependency reporting.
+
+`SoundCapabilities.registry` aggregates the installed `PcmCapabilityHandler`
+services. Each handler owns its format/operation metadata and runtime availability;
+queries retain overlaps and optional native dependencies can be unavailable.
+`AudioFileProcessor` and playback consumers use these library services directly.
+Providers use ServiceLoader and explicit module dependencies, without initializing
+InfiniFolder. See [capability registration and limits](../CAPABILITIES.md).
 
 ```mermaid
 flowchart LR
@@ -76,8 +83,9 @@ Direct positional input removes mandatory encoded-file staging where supported. 
 
 Unsupported WMA, chiptune, telephony and advanced-audio stubs no longer generate
 a fixed chord. DSD and ADX retain their existing sample conversion; actual
-registered platform codecs remain available. Unimplemented chiptune emulation
-reports unsupported. SFZ requires readable, decodable referenced WAV samples and
+registered platform codecs remain available. Optional GME and libVLC handlers now provide actual native decoding when linked
+and loadable; their runtime availability and per-input limits still apply.
+Unimplemented chiptune variants report unsupported. SFZ requires readable, decodable referenced WAV samples and
 uses their actual rate/channels; sampleless GUS patches fail. MIDI note synthesis
 and previews of valid sample banks remain input-driven. No decoder fallback may
 replace failed input with a test signal.

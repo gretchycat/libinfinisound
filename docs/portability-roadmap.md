@@ -8,7 +8,7 @@ The required host targets are Android, Linux, Windows, macOS and iOS. Parsing/pr
 
 ## Implemented foundation
 
-`audio-api` and `audio-core` are JVM libraries without Android imports. Their standard codec paths operate on reopenable `AudioInput` byte sources and return bounded `PcmStream` blocks. Decoder implementations are registered behind one interface; Android MediaExtractor/MediaCodec is registered only by `audio-processing`. A host can select portable-only decoding. The existing Java/File-based compatibility APIs remain separate from the new byte-source/PCM interfaces.
+`audio-api` and `audio-core` are JVM libraries without Android imports. Their standard codec paths operate on reopenable `AudioInput` byte sources and return bounded `PcmStream` blocks. Decoder handlers register through the library capability providers (see [discovery](../CAPABILITIES.md)); Android MediaExtractor/MediaCodec is registered only by `audio-processing`. A host can select portable-only decoding. The existing Java/File-based compatibility APIs remain separate from the new byte-source/PCM interfaces.
 
 The JVM core can be used by Linux, Windows and macOS JVM applications. This increment validates it on the available JVM and Android build environment; it does not claim runtime testing on each desktop OS. Output adapters for those systems are not included.
 
@@ -26,6 +26,6 @@ The current core includes JVM implementations and is not an iOS binary. Move the
 
 ## Composite audio
 
-Retain and extend MIDI/tracker metadata, instrument/voice control, subsongs, sample-bank resolution and incremental rendering through library-owned interfaces. Add real VGM/chiptune emulation behind the same contracts; the former fixed-chord stubs now report unsupported. Existing buffered renderer limits are preserved in this increment. Add streaming composite sessions and richer metadata without exposing backend-specific objects to players.
+Retain and extend MIDI/tracker metadata, instrument/voice control, subsongs, sample-bank resolution and incremental rendering through library-owned interfaces. Extend the existing optional GME/libVLC decoding handlers and portable VGM/chiptune coverage behind the same contracts; absent backends and unsupported variants report unsupported. The former fixed-chord stubs remain removed. Existing buffered renderer limits are preserved in this increment. Add streaming composite sessions and richer metadata without exposing backend-specific objects to players.
 
 The current host can consume common known-length positional resources for playback and metadata, keeping explicit staging where a provider or companion-file renderer requires it. Portable FLAC now provides sample-exact positioning through 32 bits, with real Android precision checks and canonical output widths. These changes preserve the existing native linked-player mechanism; they do not implement desktop/iOS output or remove live-provider acceptance work.
