@@ -10,8 +10,8 @@ object PortableAudioProcessing : AudioProcessor {
     private val legacy = AudioDecoderRegistry(BuiltInAudioDecoders.adapters) { probe ->
         BuiltInAudioDecoders.isSupported(probe.bytes, probe.extension)
     }
-    val supportedExtensions: Set<String> get() = BuiltInAudioDecoders.SUPPORTED_EXTENSIONS +
-        setOf("wav", "mp3", "aac", "m4a", "m4b", "m4r", "3ga", "flac")
+    val supportedExtensions: Set<String> get() = SoundCapabilities.registry.query(io.github.gretchycat.infinistream.Operations.DECODE)
+        .filter { it.descriptor.attributes["decoderTier"]=="portable" }.flatMap { it.descriptor.formats }.flatMap { it.extensions }.toSet()
     override fun isSupported(probe: AudioProbe): Boolean =
         probe.normalizedExtension in supportedExtensions || legacy.isSupported(probe) || StandardAudioDecoders.matches(probe)
     override fun decode(request: AudioDecodeRequest, observer: AudioDecodeObserver?): AudioDecodeResult? =

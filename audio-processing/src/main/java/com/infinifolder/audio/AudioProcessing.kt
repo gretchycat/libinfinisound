@@ -6,22 +6,23 @@ import com.infinifolder.audio.analysis.PlaybackPcmAnalyzer
 import com.infinifolder.audio.stream.FileAudioInput
 import com.infinifolder.audio.stream.probe
 import java.io.File
+import io.github.gretchycat.infinistream.Operations
 
 /** Default codec composition. It has no dependency on a viewer, storage runtime or audio output. */
 object AudioProcessing : AudioProcessor {
-    private val files = AudioFileProcessor(listOf(AndroidPcmDecoder), listOf(LibVlcAvDecoder, LibVlcPcmDecoder), listOf(SmafPcmDecoder, MidiPcmDecoder, GameMusicPcmDecoder))
-    private val platformExtensions = setOf("ogg", "oga", "opus", "mka", "weba", "mp4", "3gp", "3gpp", "3g2", "mmf", "smaf", "gp3", "amr", "awb", "wma", "ra", "ape", "ac3", "dts", "tta", "mlp", "thd", "eac3", "wv", "a52")
-    val supportedExtensions: Set<String> get() = PortableAudioProcessing.supportedExtensions + platformExtensions
+    private val files = AudioFileProcessor()
+    val supportedExtensions: Set<String> get() = SoundCapabilities.registry.query(Operations.DECODE).flatMap { it.descriptor.formats }.flatMap { it.extensions }.toSet()
     val metadata: AudioMetadataReader = AndroidAudioMetadataReader
 
     /** Configure a caller-owned font, or lazily install the bundled font from Android assets. */
-    fun setMidiSoundFont(file: File) { MidiPcmDecoder.soundFont = { file } }
+    fun setMidiSoundFont(file: File) { MidiPcmDecoder.soundFont = { file }; SoundCapabilities.registry.refresh() }
     fun initialize(context: Context) {
         val app = context.applicationContext
         MidiPcmDecoder.soundFont = { BundledMidiSoundFont.file(app) }
+        SoundCapabilities.registry.refresh()
     }
 
-    override fun isSupported(probe: AudioProbe): Boolean = PortableAudioProcessing.isSupported(probe) || probe.normalizedExtension in platformExtensions || SmafPcmDecoder.hasSignature(probe.bytes) || com.infinifolder.audio.guitarpro.GuitarPro3.matches(probe.bytes)
+    override fun isSupported(probe: AudioProbe): Boolean = PortableAudioProcessing.isSupported(probe) || probe.normalizedExtension in supportedExtensions || SmafPcmDecoder.hasSignature(probe.bytes) || com.infinifolder.audio.guitarpro.GuitarPro3.matches(probe.bytes)
     override fun decode(request: AudioDecodeRequest, observer: AudioDecodeObserver?): AudioDecodeResult? =
         files.decodeBuffered(com.infinifolder.audio.stream.MemoryAudioInput(request.bytes,
             "source.${request.probe.normalizedExtension}", request.file), observer = observer)

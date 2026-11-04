@@ -15,6 +15,9 @@ class AudioFileProcessor @JvmOverloads constructor(platformDecoders: List<PcmDec
     private val preferred = preferredDecoders.toList()
     private fun candidates(input: AudioInput, preference: DecoderPreference): List<PcmDecoder> {
         val probe = input.probe()
+        val platform = this.platform + SoundCapabilities.decoders("platform")
+        val fallback = this.fallback + SoundCapabilities.decoders("fallback")
+        val preferred = this.preferred + SoundCapabilities.decoders("preferred")
         val portable = StandardAudioDecoders.decoders + LegacyPcmDecoder
         val customFirst = PortableAudioProcessing.prefersBufferedDecode(probe)
         val candidates = when (preference) {

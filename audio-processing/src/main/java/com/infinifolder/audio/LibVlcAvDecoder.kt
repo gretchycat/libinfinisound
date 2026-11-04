@@ -39,6 +39,7 @@ internal object LibVlcAvDecoder : PcmDecoder {
     }
 }
 internal object LibVlcAvNative {
+    external fun available(): Boolean
     init { LibVlcPcmNative.ensureLoaded() }
     external fun open(input: AudioInput): Long
     external fun format(handle: Long): Long

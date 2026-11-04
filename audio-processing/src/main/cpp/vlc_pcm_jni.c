@@ -232,6 +232,7 @@ static void io_error(JNIEnv *env, const char *message) {
     (*env)->ThrowNew(env,(*env)->FindClass(env,"java/io/IOException"),message);
 }
 #define JNI(name) Java_com_infinifolder_audio_LibVlcPcmNative_##name
+JNIEXPORT jboolean JNICALL JNI(available)(JNIEnv *e,jobject self) { (void)e;(void)self;pthread_once(&api_once,load_api);return api_ready ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT jlong JNICALL JNI(open)(JNIEnv *env, jobject self, jobject input, jstring font) {
     (void)self;
     pthread_once(&api_once,load_api);

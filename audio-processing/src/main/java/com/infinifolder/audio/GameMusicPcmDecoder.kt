@@ -77,6 +77,7 @@ internal object GameMusicPcmDecoder : PcmDecoder {
     }
 }
 internal object GameMusicNative {
+    external fun available(): Boolean
     init { LibVlcPcmNative.ensureLoaded() }
     external fun open(bytes: ByteArray, informationOnly: Boolean): Long
     external fun duration(handle: Long): Int

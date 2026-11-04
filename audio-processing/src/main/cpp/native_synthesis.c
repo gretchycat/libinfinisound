@@ -58,6 +58,7 @@ static void collect(void){
     while(*at){bank *b=*at;if(b!=resident&&!b->users){*at=b->next;delete_synth(b->owner);delete_settings(b->settings);free(b->path);free(b);}else at=&b->next;}
 }
 #define MIDI(n) Java_com_infinifolder_audio_FluidLiteNative_##n
+JNIEXPORT jboolean JNICALL MIDI(available)(JNIEnv *e,jobject self) { (void)e;(void)self;pthread_once(&fluid_once,init_fluid);return fluid_ready ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT jlong JNICALL MIDI(open)(JNIEnv *e,jobject self,jstring path){
     (void)self;pthread_once(&fluid_once,init_fluid);
     if(!fluid_ready){error(e,"Bundled FluidLite API unavailable");return 0;}
@@ -122,6 +123,7 @@ static void init_game(void){void *h=dlopen("libvlc.so",RTLD_NOW|RTLD_LOCAL);if(!
 }
 typedef struct {Music_Emu *emu;int milliseconds,metadata_milliseconds,fade_milliseconds;} game_session;
 #define GAME(n) Java_com_infinifolder_audio_GameMusicNative_##n
+JNIEXPORT jboolean JNICALL GAME(available)(JNIEnv *e,jobject self) { (void)e;(void)self;pthread_once(&game_once,init_game);return game_ready ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT jlong JNICALL GAME(open)(JNIEnv *e,jobject self,jbyteArray data,jboolean information_only){
     (void)self;pthread_once(&game_once,init_game);if(!game_ready){error(e,"Bundled game music API unavailable");return 0;}
     game_session *s=calloc(1,sizeof(*s));if(!s){error(e,"Game music allocation failed");return 0;}

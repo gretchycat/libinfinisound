@@ -117,6 +117,7 @@ static int next_frame(audio *s) {
     return -1;
 }
 #define JNI(n) Java_com_infinifolder_audio_LibVlcAvNative_##n
+JNIEXPORT jboolean JNICALL JNI(available)(JNIEnv *e,jobject self) { (void)e;(void)self;pthread_once(&once,initialize);return available ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT jlong JNICALL JNI(open)(JNIEnv *e,jobject self,jobject input) {
     (void)self;pthread_once(&once,initialize);
     if(!available){error(e,"Bundled FFmpeg API/header ABI unavailable");return 0;}

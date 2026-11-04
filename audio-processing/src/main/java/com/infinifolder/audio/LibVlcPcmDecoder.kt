@@ -76,6 +76,7 @@ internal object LibVlcPcmDecoder : PcmDecoder {
 
 /** Exact JNI names are retained by consumer rules. */
 internal object LibVlcPcmNative {
+    external fun available(): Boolean
     init {
         System.loadLibrary("vlc")
         System.loadLibrary("infinivlcpcm")

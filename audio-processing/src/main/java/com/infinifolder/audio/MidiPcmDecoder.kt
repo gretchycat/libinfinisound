@@ -57,6 +57,7 @@ internal object MidiPcmDecoder : PcmDecoder {
     }
 }
 internal object FluidLiteNative {
+    external fun available(): Boolean
     init { LibVlcPcmNative.ensureLoaded() }
     external fun open(path: String): Long
     external fun event(handle: Long, message: ByteArray)

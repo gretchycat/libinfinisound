@@ -14,7 +14,7 @@ object StandardAudioDecoders {
         catch (cancel: java.io.InterruptedIOException) { throw cancel }
         catch (_: java.io.IOException) { false }
     }
-    val decoders: List<PcmDecoder> = listOf(WavePcmDecoder, FlacPcmDecoder, AacPcmDecoder, MpegPcmDecoder)
+    val decoders: List<PcmDecoder> get() = SoundCapabilities.decoders("portable").filter { it !== LegacyPcmDecoder }
     fun matches(probe: AudioProbe): Boolean {
         val input = MemoryAudioInput(probe.bytes, "source.${probe.extension.orEmpty()}")
         return decoders.any { it.matches(input, probe) }
