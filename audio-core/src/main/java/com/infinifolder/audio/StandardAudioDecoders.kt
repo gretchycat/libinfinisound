@@ -6,6 +6,9 @@ import com.infinifolder.audio.stream.*
 object StandardAudioDecoders {
     /** Content/timing-based playback policy; all codec types remain behind the common interface. */
     fun prefersPortablePlayback(input: AudioInput): Boolean {
+        // Raw CD-DA has no media-container header for Android's generic demuxer to
+        // inspect. Its dedicated portable decoder knows the fixed PCM layout.
+        if (input.name.substringAfterLast('.', "").lowercase() in setOf("cdda", "cdda-be")) return true
         val b = input.probe(12).bytes
         val signature = b.size >= 3 && (String(b, 0, 3, Charsets.US_ASCII) == "ID3" ||
             (b[0].toInt() and 255 == 255 && b[1].toInt() and 0xe0 == 0xe0))

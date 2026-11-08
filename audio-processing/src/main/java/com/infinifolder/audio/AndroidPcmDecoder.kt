@@ -15,6 +15,15 @@ import java.io.InterruptedIOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+/** Shared demuxer query used by playback and bounded file identity probing. */
+internal fun MediaExtractor.firstAudioTrack(): Pair<Int, MediaFormat>? {
+    for (index in 0 until trackCount) {
+        val format = getTrackFormat(index)
+        if (format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) return index to format
+    }
+    return null
+}
+
 /** Android's demuxer and codec are one registered decoding backend, never a player fallback. */
 internal object AndroidPcmDecoder : PcmDecoder {
     override val name = "Android.MediaCodec"
@@ -36,11 +45,8 @@ internal object AndroidPcmDecoder : PcmDecoder {
                 dataSource = adapter
                 extractor.setDataSource(adapter)
             }
-            val track = (0 until extractor.trackCount).firstOrNull {
-                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-            } ?: throw IOException("Android found no audio track")
+            val (track, format) = extractor.firstAudioTrack() ?: throw IOException("Android found no audio track")
             extractor.selectTrack(track)
-            val format = extractor.getTrackFormat(track)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: throw IOException("Missing Android audio MIME")
             val hasDelay = format.containsKey(MediaFormat.KEY_ENCODER_DELAY)
             val delay = format.intOr(MediaFormat.KEY_ENCODER_DELAY, 0)
@@ -70,13 +76,14 @@ internal object AndroidPcmDecoder : PcmDecoder {
                 codec.configure(format, null, null, 0)
                 codec.start()
             }
-            val stream = AndroidStream(extractor, codec, dataSource, format)
+            val stream = AndroidStream(extractor, codec, dataSource, format, mime)
             if (stream.precisionBits < flacDepth) throw IOException("Android codec reduced FLAC sample precision")
             // Canonical FLAC output width follows source precision, even when a codec
             // supplies a wider integer container. This keeps late fallback format-stable.
             val pcm: PcmStream = if (flac) object : PcmStream {
                 override val format = stream.format.copy(bitsPerSample = if (flacDepth <= 16) 16 else if (flacDepth <= 24) 24 else 32)
                 override val decoderName get() = stream.decoderName
+                override val sourceFormat get() = stream.sourceFormat
                 override fun read(samples: IntArray, offset: Int, length: Int) = stream.read(samples, offset, length)
                 override fun close() = stream.close()
             } else stream
@@ -88,6 +95,7 @@ internal object AndroidPcmDecoder : PcmDecoder {
                 private var output: PcmStream = TrimmedPcmStream(pcm, leading, padding, limit)
                 override val format = output.format
                 override val decoderName get() = stream.decoderName
+                override val sourceFormat get() = stream.sourceFormat
                 override fun read(samples: IntArray, offset: Int, length: Int) = output.read(samples, offset, length)
                 override fun seekToFrame(frame: Long) {
                     require(frame in 0..limit)
@@ -116,7 +124,8 @@ internal object AndroidPcmDecoder : PcmDecoder {
         private var extractor: MediaExtractor,
         private val codec: MediaCodec?,
         private var source: MediaDataSource?,
-        input: MediaFormat
+        input: MediaFormat,
+        override val sourceFormat: String
     ) : BlockPcmStream() {
         private var rate = input.getInteger(MediaFormat.KEY_SAMPLE_RATE)
         private var channels = input.getInteger(MediaFormat.KEY_CHANNEL_COUNT)

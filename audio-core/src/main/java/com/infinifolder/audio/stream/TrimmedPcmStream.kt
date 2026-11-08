@@ -11,6 +11,8 @@ class TrimmedPcmStream(
     totalFrames: Long? = null
 ) : BlockPcmStream() {
     override val format = stream.format.copy(totalFrames = totalFrames)
+    override val decoderName get() = stream.decoderName
+    override val sourceFormat get() = stream.sourceFormat
     private var skip = skipFrames * format.channels
     private var remaining = totalFrames?.let { it * format.channels }
     private var tail = IntArray(0)

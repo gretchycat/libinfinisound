@@ -14,7 +14,7 @@ object CddaDecoder {
 
     fun canDecode(bytes: ByteArray, extension: String? = null): Boolean {
         val ext = extension?.lowercase() ?: ""
-        if (ext == "cdda") return true
+        if (ext in setOf("cdda", "cdda-be")) return true
         return false
     }
 
@@ -44,7 +44,7 @@ object CddaDecoder {
             prevBe = curBe
         }
 
-        val useBigEndian = diffBe * 2 < diffLe
+        val useBigEndian = extension?.equals("cdda-be", true) == true || diffBe * 2 < diffLe
 
         val buffer = ByteBuffer.wrap(bytes)
         buffer.order(if (useBigEndian) ByteOrder.BIG_ENDIAN else ByteOrder.LITTLE_ENDIAN)

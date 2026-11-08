@@ -45,6 +45,10 @@ gradle :audio-api:test :audio-core:test :audio-guitarpro:test :audio-processing:
 No browser process is required. Keep existing format regression suites; capability
 tests invoke actual services/parsers rather than scripted success responses.
 
+## New format modules
+
+New audio, tracker, and playlist handlers must validate bytes with bounded magic or their actual parser and expose parsed stream/playlist metadata through `MetadataCapabilityHandler`. Report decoder availability separately from identity, and do not infer codec fields from filename extensions. Follow the shared [Stream conformance rule](../libinfinistream/CAPABILITIES.md#format-module-validation-and-metadata-requirements).
+
 ## Host audit record
 
 InfiniFolder's 2026-11-04 runtime-discovery audit exercises this repository through

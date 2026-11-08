@@ -4,5 +4,6 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 
 dependencies {
     api("io.github.gretchycat.libinfinistream:stream-core:0.1.0")
+    implementation("org.json:json:20240303")
     testImplementation("junit:junit:4.13.2")
 }

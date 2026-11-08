@@ -51,6 +51,16 @@ implementation("io.github.gretchycat.libinfinisound:audio-core:0.2.0")
 implementation("io.github.gretchycat.libinfinisound:audio-processing:0.2.0")
 ```
 
+The Sound library exposes playlist parsing for M3U/M3U8, PLS, XSPF, JSPF, CUE,
+and cdrdao TOC. CUE/cdrdao raw binary audio tracks carry a CD-DA decoder hint
+through expansion and use a bounded streaming PCM decoder; CUE `MOTOROLA` data
+is treated as big-endian. CDDB `cddb.toc` metadata is not considered a playable TOC.
+XSPF XML parsing is namespace-aware and disables external entity resolution; JSPF
+reads the first playable location from each JSON track while retaining title,
+creator, album, and millisecond duration metadata. Relative locations are resolved
+by the consuming media viewer against the playlist's location, including absolute
+`file:` URIs and escaped paths.
+
 Gradle substitutes these coordinates with the pinned source. Artifacts have not been published to Maven Central. The consuming Git submodule commit pins the implementation.
 
 ## Streaming and platform selection
