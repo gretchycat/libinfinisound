@@ -12,9 +12,10 @@ including its FluidLite MIDI synthesizer, through a dynamic PCM-only adapter.
 Its license and upstream source references are packaged under
 `audio-processing/src/main/assets/third-party/libvlc-pcm/`.
 
-FluidR3_GM.sf2 (Fluid 3.1) is included unmodified under Frank Wen's MIT license,
-compressed losslessly as three consecutive bzip2 asset fragments. Its complete
-COPYING, original README, source URL and original/compressed provenance are in
+FluidR3Mono_GM.sf3, version 2.312, is included under the MIT license. It is the
+mono conversion of FluidR3 by Michael Cowgill, based on Frank Wen's MIT-licensed
+bank, and includes additional credited instruments. The complete attribution,
+COPYING, original README and source references are in
 `audio-processing/src/main/assets/third-party/fluidr3/`. These notices do not
 change the license status of original InfiniSound code above.
 

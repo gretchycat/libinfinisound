@@ -16,15 +16,12 @@ FLAC test fixtures use FFmpeg/libFLAC as independent encoders; those tools are n
   and decoded-PCM callbacks; it opens no device output. Codec objects remain
   inside the adapter. `libVlcAar` permits a compatible source-built replacement.
   Notices and upstream source references are packaged in `third-party/libvlc-pcm`.
-- FluidR3_GM.sf2, Fluid 3.1, copyright Frank Wen, MIT. Unmodified data from the
-  [Debian source archive](https://deb.debian.org/debian/pool/main/f/fluid-soundfont/fluid-soundfont_3.1.orig.tar.gz)
-  is compressed losslessly as one bzip2 stream split into three asset fragments.
-  The original README, full MIT license and original SHA-256 are packaged in
-  `third-party/fluidr3`. Synthesis uses libVLC's bundled FluidLite implementation;
-  the earlier sample-preview reader is not used to interpret the GM bank.
-- Apache Commons Compress 1.27.1 provides streamed bzip2 decompression, with
-  Commons IO 2.16.1, Codec 1.17.1 and Lang 3.16.0 dependencies (Apache-2.0).
-  Their original LICENSE/NOTICE files are packaged under `third-party/commons-*`.
+- FluidR3Mono_GM.sf3, version 2.312, MIT. The mono conversion is copyright
+  Michael Cowgill; the original FluidR3 bank is copyright Frank Wen, with
+  additional Temple Blocks and Drumline Percussion credits. The complete
+  attribution, README and COPYING are packaged in `third-party/fluidr3`.
+  FluidLite loads the SF3 file directly; the sample-preview reader is not used
+  to interpret the GM bank.
 
 All above asset paths are relative to `audio-processing/src/main/assets`.
 The Android bridge builds with CMake/NDK outside Termux; the existing Termux

@@ -9,7 +9,7 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isReturnDefaultValues = true }
-    androidResources { noCompress += "bz2" }
+    androidResources { noCompress += "sf3" }
     if (!file("/data/data/com.termux/files/usr/bin/clang").isFile) {
         externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
     }
@@ -55,6 +55,5 @@ dependencies {
     val localVlc = providers.gradleProperty("libVlcAar").orNull
     if (localVlc == null) implementation("org.videolan.android:libvlc-all:3.7.7")
     else implementation(files(localVlc))
-    implementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation("junit:junit:4.13.2")
 }

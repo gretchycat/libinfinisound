@@ -2,6 +2,12 @@ Fluid (R3) SoundFont
 
 Copyright (c) 2000-2002, 2008 Frank Wen <getfrank@gmail.com>
 
+FluidR3Mono_GM.sf3 is the mono conversion by Michael Cowgill, copyright
+2014-2016, of the FluidR3 GM soundfont. It also includes the Temple Blocks
+instrument by Ethan Winer (copyright 2002) and Drumline Percussion by
+Michael Schorsch (copyright 2016). The mono version is MIT licensed; see
+COPYING.txt for the complete notice and permission terms.
+
 I hereby release Fluid under the MIT license, as described in COPYING.
 
 
