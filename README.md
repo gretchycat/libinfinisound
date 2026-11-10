@@ -146,20 +146,16 @@ finishes decoding before publishing its WAVE to an output player. Encoded bytes
 are read through callbacks; this is not a claim of lazy PCM playback for libVLC
 formats. Existing known-length fast paths remain lazy and positioned.
 
-Call `AudioProcessing.initialize(context)` to enable the bundled
-FluidR3Mono_GM.sf3 bank for MIDI. First MIDI use streams the 14,540,067-byte
-SF3 asset to a private, atomically published, SHA-256-verified file. The bank
-uses Ogg Vorbis-compressed samples and needs no intermediate SF2 decompression.
-Java never holds the entire soundfont byte array. Later uses reuse the verified
-disk cache. The native FluidLite
-adapter keeps the loaded bank resident for the process lifetime, with separate
+MIDI uses the portable `MidiSequencer` by default; the application does not ship
+a General MIDI bank. A caller may optionally configure an owned SF2 or SF3 file
+with `setMidiSoundFont(file)`. When configured, the Android FluidLite adapter
+keeps the loaded bank resident for the process lifetime, with separate
 synthesizer/voice state per stream. All calls touching the shared bank are
-serialized; closing one stream does not unload the bank used by another.
-The portable SMF 0/1 and RMID timeline parser supplies a finite frame total
+serialized; closing one stream does not unload the bank used by another. The
+portable SMF 0/1 and RMID timeline parser supplies a finite frame total
 (including a two-second release tail), so MIDI PCM is rendered lazily in blocks.
-FluidLite interprets actual GM presets, note programs and channel-10 percussion. Core/portable-only synthesis remains separately available. A caller
-may instead configure a caller-owned SF2 or SF3 file with `setMidiSoundFont(file)`;
-diagnostics identify the supplied filename, rather than claiming the bundled bank.
+FluidLite interprets imported GM presets, note programs and channel-10
+percussion; without an imported bank, portable instrument timbres are simpler.
 
 LibVLC and FluidR3Mono retain their licenses/notices and source references; see
 `docs/third-party.md`. Outside Termux the callback bridge

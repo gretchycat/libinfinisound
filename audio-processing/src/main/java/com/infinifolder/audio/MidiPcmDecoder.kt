@@ -13,6 +13,17 @@ internal object MidiPcmDecoder : PcmDecoder {
     override val name = "libVLC.FluidLite"
     @Volatile var soundFont: (() -> File)? = null
     override fun matches(input: AudioInput, probe: AudioProbe) = soundFont != null && (MidiSequencer.isMidi(probe.bytes) || GuitarPro3.matches(probe.bytes))
+
+    /** Warm the native shared bank cache. Closing this voice retains the resident sample bank. */
+    fun preloadSoundFont(): Boolean {
+        val font = soundFont?.invoke() ?: return false
+        if (!font.isFile || !font.canRead()) return false
+        val handle = FluidLiteNative.open(font.absolutePath)
+        if (handle == 0L) return false
+        FluidLiteNative.close(handle)
+        return true
+    }
+
     override fun open(input: AudioInput): PcmStream {
         val guitarPro = GuitarPro3.matches(input.probe().bytes)
         val timeline = if (guitarPro) GuitarPro3.read(input).timeline else MidiTimeline.read(input)

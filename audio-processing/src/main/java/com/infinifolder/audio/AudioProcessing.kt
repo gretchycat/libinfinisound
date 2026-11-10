@@ -14,11 +14,12 @@ object AudioProcessing : AudioProcessor {
     val supportedExtensions: Set<String> get() = SoundCapabilities.registry.query(Operations.DECODE).flatMap { it.descriptor.formats }.flatMap { it.extensions }.toSet()
     val metadata: AudioMetadataReader = AndroidAudioMetadataReader
 
-    /** Configure a caller-owned font, or lazily install the bundled font from Android assets. */
+    /** Configure a caller-owned MIDI SoundFont. MIDI otherwise uses the portable built-in synthesizer. */
     fun setMidiSoundFont(file: File) { MidiPcmDecoder.soundFont = { file }; SoundCapabilities.registry.refresh() }
-    fun initialize(context: Context) {
-        val app = context.applicationContext
-        MidiPcmDecoder.soundFont = { BundledMidiSoundFont.file(app) }
+    /** Loads the configured FluidLite bank into its process-wide resident cache without rendering a track. */
+    fun preloadMidiSoundFont(): Boolean = MidiPcmDecoder.preloadSoundFont()
+    fun initialize(@Suppress("UNUSED_PARAMETER") context: Context) {
+        MidiPcmDecoder.soundFont = null
         SoundCapabilities.registry.refresh()
     }
 

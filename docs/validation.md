@@ -1,13 +1,11 @@
 # Validation of portable/native decoding
 
-## Current bundled MIDI bank (2026-11-08)
+## MIDI packaging update (2026-11-09)
 
-The bundled MIDI bank is now the owner-supplied FluidR3Mono_GM.sf3 asset
-(14,540,067 bytes), streamed and SHA-256 checked into private storage. The prior
-148 MB SF2 and its compressed asset fragments were removed. The runtime checker
-now covers direct SF3 loading, preset/percussion output, cache reuse, and removal
-of the old private SF2 cache. That checker was updated but was not run as part of
-this asset replacement; checkpoint 24 below records historical SF2 results.
+The bundled FluidR3Mono_GM.sf3 asset was removed to reduce app size. MIDI uses
+the portable synthesizer unless an application configures a user-supplied SF2 or
+SF3 bank for FluidLite. Historical FluidR3 validation below records the earlier
+bundled implementation and is not a claim about the current default.
 
 Validated 2026-10-30 in the existing Termux/JVM and Android device runtime environment.
 

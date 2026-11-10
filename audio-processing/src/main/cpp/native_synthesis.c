@@ -61,7 +61,7 @@ static void collect(void){
 JNIEXPORT jboolean JNICALL MIDI(available)(JNIEnv *e,jobject self) { (void)e;(void)self;pthread_once(&fluid_once,init_fluid);return fluid_ready ? JNI_TRUE : JNI_FALSE; }
 JNIEXPORT jlong JNICALL MIDI(open)(JNIEnv *e,jobject self,jstring path){
     (void)self;pthread_once(&fluid_once,init_fluid);
-    if(!fluid_ready){error(e,"Bundled FluidLite API unavailable");return 0;}
+        if(!fluid_ready){error(e,"FluidLite API unavailable");return 0;}
     const char *p=(*e)->GetStringUTFChars(e,path,NULL);if(!p)return 0;
     pthread_mutex_lock(&fluid_lock);
     bank *b=banks;while(b&&strcmp(b->path,p))b=b->next;

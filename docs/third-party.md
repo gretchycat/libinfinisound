@@ -9,19 +9,15 @@
 
 FLAC test fixtures use FFmpeg/libFLAC as independent encoders; those tools are not runtime dependencies.
 
-## Android PCM fallback and bundled MIDI bank
+## Android PCM fallback and optional MIDI bank
 
 - `org.videolan.android:libvlc-all:3.7.7`: LGPL-2.1-or-later, the same artifact as
   InfiniVideo. The Sound adapter dynamically calls libVLC's public media-input
   and decoded-PCM callbacks; it opens no device output. Codec objects remain
   inside the adapter. `libVlcAar` permits a compatible source-built replacement.
   Notices and upstream source references are packaged in `third-party/libvlc-pcm`.
-- FluidR3Mono_GM.sf3, version 2.312, MIT. The mono conversion is copyright
-  Michael Cowgill; the original FluidR3 bank is copyright Frank Wen, with
-  additional Temple Blocks and Drumline Percussion credits. The complete
-  attribution, README and COPYING are packaged in `third-party/fluidr3`.
-  FluidLite loads the SF3 file directly; the sample-preview reader is not used
-  to interpret the GM bank.
+No MIDI bank is bundled. FluidLite can load a caller-supplied SF2/SF3 file when
+an application configures one; ownership and licensing remain with the caller.
 
 All above asset paths are relative to `audio-processing/src/main/assets`.
 The Android bridge builds with CMake/NDK outside Termux; the existing Termux
