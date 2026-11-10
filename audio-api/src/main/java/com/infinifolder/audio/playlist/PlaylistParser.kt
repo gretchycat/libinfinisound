@@ -27,7 +27,11 @@ data class PlaylistEntry(
     val durationMillis: Long? = null,
     val album: String = "",
     /** Decoder override for raw audio carried by a cue/TOC image with an opaque suffix. */
-    val decoderExtension: String? = null
+    val decoderExtension: String? = null,
+    val directoryUri: String? = null,
+    val directoryName: String? = null,
+    val directoryCoverUri: String? = null,
+    val directoryArtworkMetadataResolved: Boolean = false
 )
 
 /** Playlist parsing is a Sound capability in its own right, separate from audio decoders. */
@@ -295,12 +299,26 @@ object PlaylistParser : MetadataCapabilityHandler {
                 val title = track.optString("title").takeIf { it.isNotBlank() }
                     ?: location.substringAfterLast('/').substringAfterLast('\\')
                 val duration = numberAsLong(track.opt("duration"))?.takeIf { it >= 0L }
+                val infiniExtension = track.optJSONObject("extension")
+                    ?.optJSONObject("io.github.gretchycat.infiniselect")
                 add(PlaylistEntry(
                     title = title,
                     pathOrUri = location,
                     performer = track.optString("creator"),
+                    startByte = infiniExtension?.optLong("startByte", 0L)?.coerceAtLeast(0L) ?: 0L,
+                    lengthBytes = infiniExtension?.optLong("lengthBytes", -1L) ?: -1L,
                     durationMillis = duration,
-                    album = track.optString("album")
+                    album = track.optString("album"),
+                    decoderExtension = infiniExtension?.optString("decoderExtension")
+                        ?.takeIf { it.isNotBlank() },
+                    directoryUri = infiniExtension?.optString("directoryUri")
+                        ?.takeIf { it.isNotBlank() && it != "null" },
+                    directoryName = infiniExtension?.optString("directoryName")
+                        ?.takeIf { it.isNotBlank() && it != "null" },
+                    directoryCoverUri = infiniExtension?.optString("directoryCoverUri")
+                        ?.takeIf { it.isNotBlank() && it != "null" },
+                    directoryArtworkMetadataResolved = infiniExtension?.optBoolean(
+                        "directoryArtworkMetadataResolved", false) == true
                 ))
             }
         }
