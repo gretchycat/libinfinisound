@@ -5,22 +5,23 @@ plugins {
 android {
     namespace = "com.infinifolder.audio.processing"
     compileSdk = 36
+    ndkVersion = "27.2.12479018"
     defaultConfig { minSdk = 26; consumerProguardFiles("consumer-rules.pro") }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isReturnDefaultValues = true }
     androidResources { noCompress += "sf3" }
-    if (!file("/data/data/com.termux/files/usr/bin/clang").isFile) {
-        externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
+    if (!(System.getenv("TERMUX_VERSION") != null)) {
+        externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     }
-    if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
+    if ((System.getenv("TERMUX_VERSION") != null)) {
         sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("openmptNative"))
         sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("vlcPcmNative"))
         sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("smafNative"))
     }
 }
 
-if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
+if ((System.getenv("TERMUX_VERSION") != null)) {
     val buildOpenMptNative = tasks.register<Exec>("buildOpenMptNative") {
         inputs.dir("src/main/cpp")
         outputs.dir(layout.buildDirectory.dir("openmptNative"))

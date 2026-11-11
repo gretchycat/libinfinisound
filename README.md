@@ -1,5 +1,23 @@
 # libinfinisound
 
+## Reproducible standalone build
+
+Install JDK 17 or 21, Python 3, Android SDK platform 36/build tools 35.0.0,
+and (for JNI modules) NDK 27.2.12479018/CMake 3.22.1. Set `ANDROID_HOME` or
+this checkout's untracked `local.properties`. The checked-in Gradle 9.7.1 wrapper
+is verified by its distribution SHA-256.
+
+```sh
+python3 scripts/fetch-dependencies.py
+./gradlew :audio-api:test :audio-core:test :audio-guitarpro:test :audio-processing:testDebugUnitTest :audio-processing:assembleDebug
+```
+
+The lock includes only this library's required source dependencies, including
+transitive dependencies. Fetching checks pin agreement and refuses to overwrite
+local changes. `python3 scripts/fetch-dependencies.py --check` checks revisions.
+No application checkout is required. CI uses the same commands from a fresh clone.
+
+
 Runtime discovery: [handler schema, registration, linked dependencies and limits](CAPABILITIES.md).
 
 Audio parsing, decoding, synthesis, metadata, playlists and signal analysis extracted from [InfiniFolder](https://github.com/gretchycat/infinifolder). Output devices, playback queues, UI, source staging and Cast routing are owned by the consuming application.
@@ -106,7 +124,7 @@ See [portability roadmap](docs/portability-roadmap.md), [architecture](docs/arch
 
 ## InfiniStream compatibility
 
-`audio-api` now depends on `libinfinistream:stream-core:0.1.0`. Clone the sibling repository at the workspace's pinned revision (foundation `1b68893`) before a standalone source build, or set `-PinfiniLibrariesDir`. `StreamAudioInput` accepts a known-length positional source without hidden spooling; `PcmStreamHandle` exposes actual typed PCM output metadata. `AudioStreamProcessor` advertises accepted/produced types and borrows encoded input while owning decoded output. Existing FileAudioInput callers retain file hints and use Stream positional I/O internally. Existing APIs, codecs and Android output behavior are preserved.
+`audio-api` now depends on `libinfinistream:stream-core:0.1.0`. Run the pinned dependency bootstrap before a standalone build. `StreamAudioInput` accepts a known-length positional source without hidden spooling; `PcmStreamHandle` exposes actual typed PCM output metadata. `AudioStreamProcessor` advertises accepted/produced types and borrows encoded input while owning decoded output. Existing FileAudioInput callers retain file hints and use Stream positional I/O internally. Existing APIs, codecs and Android output behavior are preserved.
 
 PCM output metadata preserves original source provenance/warnings and adds the audio-decode step while describing actual sample format/rate/channels; uncertain liveness remains unknown. Formats requiring file-relative banks or companion resources retain the File compatibility APIs until a common related-resource resolver is supplied; the app retains those file hints and behaviors.
 

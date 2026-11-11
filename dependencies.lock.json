@@ -1,0 +1,9 @@
+{
+  "directory": "dependencies",
+  "repositories": {
+    "libinfinistream": {
+      "url": "https://github.com/gretchycat/libinfinistream.git",
+      "commit": "893584ff4605148df9116c431c240fcb4fb72c33"
+    }
+  }
+}

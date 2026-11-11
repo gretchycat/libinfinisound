@@ -6,18 +6,18 @@ native_java_home=$2
 mkdir -p "$native_output/arm64-v8a"
 
 clang -std=gnu11 -O2 -fPIC -shared -Wall -Wextra \
-    -I/data/data/com.termux/files/usr/include \
+    -I"${PREFIX:?Set PREFIX to the Termux installation prefix}"/include \
     -I"$native_java_home/include" -I"$native_java_home/include/linux" \
     "$native_src/openmpt_jni.c" \
     -lopenmpt -Wl,-z,max-page-size=16384 -Wl,-soname,libinfiniopenmpt.so \
     -o "$native_output/arm64-v8a/libinfiniopenmpt.so"
 
-cp /data/data/com.termux/files/usr/lib/libopenmpt.so \
-   /data/data/com.termux/files/usr/lib/libmpg123.so \
-   /data/data/com.termux/files/usr/lib/libvorbis.so \
-   /data/data/com.termux/files/usr/lib/libvorbisfile.so \
-   /data/data/com.termux/files/usr/lib/libogg.so \
-   /data/data/com.termux/files/usr/lib/libc++_shared.so \
+cp "${PREFIX:?Set PREFIX to the Termux installation prefix}"/lib/libopenmpt.so \
+   "${PREFIX:?Set PREFIX to the Termux installation prefix}"/lib/libmpg123.so \
+   "${PREFIX:?Set PREFIX to the Termux installation prefix}"/lib/libvorbis.so \
+   "${PREFIX:?Set PREFIX to the Termux installation prefix}"/lib/libvorbisfile.so \
+   "${PREFIX:?Set PREFIX to the Termux installation prefix}"/lib/libogg.so \
+   "${PREFIX:?Set PREFIX to the Termux installation prefix}"/lib/libc++_shared.so \
    "$native_output/arm64-v8a/"
 
 patchelf --replace-needed libz.so.1 libz.so "$native_output/arm64-v8a/libopenmpt.so"

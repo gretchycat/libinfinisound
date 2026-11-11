@@ -8,7 +8,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
-if (!providers.gradleProperty("portableOnly").isPresent && file("/data/data/com.termux/files/usr/bin/clang").isFile) {
+if (!providers.gradleProperty("portableOnly").isPresent && (System.getenv("TERMUX_VERSION") != null)) {
     tasks.withType<Test>().configureEach {
         dependsOn(":audio-processing:buildOpenMptNative")
         val nativeDir = project(":audio-processing").layout.buildDirectory.dir("openmptNative")
