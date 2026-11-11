@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 native_src=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+python3 "$native_src/../../../../scripts/verify-termux-native.py"
 native_output=$1
 native_java_home=$2
 mkdir -p "$native_output/arm64-v8a"

@@ -23,6 +23,8 @@ android {
 
 if ((System.getenv("TERMUX_VERSION") != null)) {
     val buildOpenMptNative = tasks.register<Exec>("buildOpenMptNative") {
+        inputs.file(rootProject.file("termux-native-dependencies.json"))
+        inputs.file(rootProject.file("scripts/verify-termux-native.py"))
         inputs.dir("src/main/cpp")
         outputs.dir(layout.buildDirectory.dir("openmptNative"))
         commandLine("sh", file("src/main/cpp/build-openmpt.sh"),

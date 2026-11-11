@@ -280,3 +280,5 @@ wavetable avoids per-sample trigonometry. Up to 5 ms attack and 8 ms release sof
 note boundaries within the existing gate; note/rest durations and articulation
 frames are unchanged. The host APK builds with this change; listening acceptance
 on a handset remains pending. No additional tests were added or run.
+
+The Termux native tracker dependency versions are pinned in `termux-native-dependencies.json`. The build checks installed versions; update this manifest deliberately when updating that toolchain. Bundled copyright texts accompany the copied native libraries. Standard NDK builds do not use these system packages.
