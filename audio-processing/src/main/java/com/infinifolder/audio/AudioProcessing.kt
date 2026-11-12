@@ -114,46 +114,91 @@ object AudioProcessing : AudioProcessor {
         fallbackName: String = "", durationMs: Long = 0L): AudioFormatInfo =
         AndroidAudioMetadataReader.probeFormat(source, fallbackName, durationMs)
 
-    fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean = false): AudioTags {
+    fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean = false): AudioTags =
+        readTags(source, includeArtwork, io.github.gretchycat.infinistream.CancellationToken.NONE)
+
+    /** Read bounded audio tags while respecting the shared cancellation contract. */
+    fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean,
+        cancellation: io.github.gretchycat.infinistream.CancellationToken): AudioTags =
+        readTags(source, includeArtwork, cancellation, 16L * 1024 * 1024, 512, 3_000_000_000L)
+
+    /** Read tags within the caller's metadata budgets; no decoder may widen those limits. */
+    fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean,
+        cancellation: io.github.gretchycat.infinistream.CancellationToken, maxBytes: Long, maxReads: Int,
+        maxNanos: Long): AudioTags {
+        require(maxBytes >= 0 && maxReads >= 0 && maxNanos >= 0)
         val delegate = StreamAudioInput(source)
         val caller = Thread.currentThread()
-        var deadline = System.nanoTime() + 3_000_000_000L
+        val started = System.nanoTime()
+        var bytesRead = 0L
+        var reads = 0
+        var budgetExceeded = false
+        fun checkBudget() {
+            cancellation.check()
+            if (caller.isInterrupted) throw java.io.InterruptedIOException("Audio metadata cancelled")
+            if (budgetExceeded || System.nanoTime() - started > maxNanos || bytesRead > maxBytes || reads > maxReads)
+                throw java.io.IOException("Audio metadata read budget exceeded")
+        }
         val input = object : AudioInput {
             override val name = delegate.name
             override fun open(): AudioBytes {
                 val bytes = delegate.open()
                 return object : AudioBytes by bytes {
                     override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int): Int {
+                        cancellation.check()
                         if (caller.isInterrupted) throw java.io.InterruptedIOException("Audio metadata cancelled")
-                        if (System.nanoTime() > deadline) throw java.io.IOException("Audio metadata inspection timed out")
-                        return bytes.readAt(position,buffer,offset,length)
+                        if (System.nanoTime() - started > maxNanos || reads++ >= maxReads || length.toLong() > maxBytes - bytesRead) {
+                            budgetExceeded = true
+                            throw java.io.IOException("Audio metadata read budget exceeded")
+                        }
+                        val count = bytes.readAt(position,buffer,offset,length)
+                        if (count > 0) bytesRead += count
+                        if (System.nanoTime() - started > maxNanos || bytesRead > maxBytes) {
+                            budgetExceeded = true
+                            throw java.io.IOException("Audio metadata read budget exceeded")
+                        }
+                        return count
                     }
                 }
             }
         }
+        checkBudget()
         val probe = input.probe()
+        checkBudget()
         // Android cannot inspect these event/emulation formats. Timing does not need PCM or a bank.
-        if (com.infinifolder.audio.tracker.MidiSequencer.isMidi(probe.bytes))
-            return AudioTags(null,null,null,com.infinifolder.audio.midi.MidiTimeline.read(input).durationMs.toString())
+        if (com.infinifolder.audio.tracker.MidiSequencer.isMidi(probe.bytes)) {
+            val result = AudioTags(null,null,null,com.infinifolder.audio.midi.MidiTimeline.read(input).durationMs.toString())
+            checkBudget()
+            return result
+        }
         if (com.infinifolder.audio.guitarpro.GuitarPro3.matches(probe.bytes)) {
             val score = com.infinifolder.audio.guitarpro.GuitarPro3.read(input)
-            return AudioTags(score.title,score.artist,null,score.timeline.durationMs.toString())
+            val result = AudioTags(score.title,score.artist,null,score.timeline.durationMs.toString())
+            checkBudget()
+            return result
         }
-        if (SmafPcmDecoder.matches(input,probe))
-            return AudioTags(null,null,null,SmafPcmDecoder.duration(input).toString())
-        if (GameMusicPcmDecoder.matches(input,probe))
-            return AudioTags(null,null,null,GameMusicPcmDecoder.inspectDuration(input)?.toString())
+        if (SmafPcmDecoder.matches(input,probe)) {
+            val result = AudioTags(null,null,null,SmafPcmDecoder.duration(input).toString())
+            checkBudget()
+            return result
+        }
+        if (GameMusicPcmDecoder.matches(input,probe)) {
+            val result = AudioTags(null,null,null,GameMusicPcmDecoder.inspectDuration(input)?.toString())
+            checkBudget()
+            return result
+        }
         val tags = runCatching { input.open().use { bytes ->
             metadata.readTags(AudioMetadataSource.Seekable(bytes.size, bytes::readAt), includeArtwork)
         } }.getOrElse { AudioTags(null,null,null,null) }
+        checkBudget()
         if ((tags.duration?.toLongOrNull() ?: 0) > 0) return tags
         // A failed platform probe must not consume the portable/native fallback's
         // complete read budget. Each stage remains bounded independently.
-        deadline = System.nanoTime() + 3_000_000_000L
         val duration = try { inspectDuration(input) }
             catch (cancel: java.io.InterruptedIOException) { throw cancel }
             catch (_: Exception) { null }
             catch (_: LinkageError) { null }
+        checkBudget()
         return tags.copy(duration = duration?.toString())
     }
 
