@@ -84,6 +84,31 @@ class AudioFileProcessor @JvmOverloads constructor(platformDecoders: List<PcmDec
         throw IOException("No decoder accepted ${input.name}", failure)
     }
 
+    /**
+     * Package an already-decoded or synthesized, exact-length PCM stream as a
+     * lazily cached WAVE source. The supplied scratch file remains host-owned.
+     */
+    fun openWaveSource(stream: PcmStream, scratch: File,
+        output: PcmOutputOptions = PcmOutputOptions(), observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false },
+        metadata: io.github.gretchycat.infinistream.StreamMetadata = io.github.gretchycat.infinistream.StreamMetadata()
+    ): AudioWaveSource {
+        val pcm = stream.forOutput(output)
+        val sourceClosed = java.util.concurrent.atomic.AtomicBoolean(false)
+        try {
+            if (pcm.format.totalFrames == null) throw IOException("An exact PCM length is required")
+            if (cancelled()) throw InterruptedIOException("Audio preparation cancelled")
+            val result = AudioPreparation(pcm.format, pcm.decoderName ?: "PCM", pcm.sourceFormat)
+            val source = PcmWaveSource(pcm, scratch, { sourceClosed.get() || cancelled() }, metadata) {
+                observer?.prepared(it)
+            }
+            return AudioWaveSource(source, result, true, metadata, { sourceClosed.set(true) })
+        } catch (error: Throwable) {
+            runCatching { pcm.close() }
+            scratch.delete()
+            throw error
+        }
+    }
+
     /** Known-length PCM is pulled lazily into an explicit disk cache; unknown lengths retain full preparation. */
     fun openWaveSource(input: AudioInput, scratch: File,
         preference: DecoderPreference = DecoderPreference.PLATFORM_FIRST,

@@ -65,6 +65,12 @@ object AudioProcessing : AudioProcessor {
         output: PcmOutputOptions, cancelled: () -> Boolean = { false }): AudioWaveSource =
         files.openWaveSource(StreamAudioInput(source),scratch,output,cancelled = cancelled,metadata = source.metadata)
 
+    /** Host-owned WAVE cache for an exact-length synthesized stream (for example ANSI Music). */
+    fun openWaveSource(stream: PcmStream, scratch: File, output: PcmOutputOptions = PcmOutputOptions(),
+        cancelled: () -> Boolean = { false },
+        metadata: io.github.gretchycat.infinistream.StreamMetadata = io.github.gretchycat.infinistream.StreamMetadata()
+    ): AudioWaveSource = files.openWaveSource(stream, scratch, output, cancelled = cancelled, metadata = metadata)
+
     /** Playback chooses the measured fast portable MPEG path, with Android fallback inside the library. */
     fun openPlaybackSource(source: File, scratch: File,
         observer: AudioPreparationObserver? = null, cancelled: () -> Boolean = { false }): AudioWaveSource {

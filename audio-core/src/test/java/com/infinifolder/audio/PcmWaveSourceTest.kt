@@ -58,6 +58,72 @@ class PcmWaveSourceTest {
         assertEquals(1, decoder.closes)
     }
 
+    @Test fun externalPcmStreamsUseTheSameLazyWaveTransportAndCloseTheirOwner() {
+        val totalFrames = 9000L
+        var position = 0L
+        var closed = false
+        val pcm = object : PcmStream {
+            override val format = PcmFormat(22050, 1, totalFrames, 16)
+            override val decoderName = "Test.Synth"
+            override val sourceFormat = "synthesized"
+            override fun read(samples: IntArray, offset: Int, length: Int): Int {
+                if (closed) throw IOException("closed")
+                if (position >= totalFrames) return -1
+                val count = minOf(length.toLong(), totalFrames - position).toInt()
+                repeat(count) { samples[offset + it] = 0x40000000 }
+                position += count
+                return count
+            }
+            override fun close() { closed = true }
+        }
+        val scratch = temporary.newFile("external-pcm.wav")
+        val source = AudioFileProcessor().openWaveSource(pcm, scratch)
+        assertTrue(source.progressive)
+        assertEquals("Test.Synth", source.preparation.decoder)
+        assertEquals(22050, source.metadata.attributes["sampleRate"]?.toInt())
+        assertTrue("only the first bounded block is cached", scratch.length() < 44 + totalFrames * 2)
+        val header = ByteArray(44)
+        source.readAt(0, header)
+        assertEquals("RIFF", String(header, 0, 4, Charsets.US_ASCII))
+        assertEquals("WAVE", String(header, 8, 4, Charsets.US_ASCII))
+        assertEquals(22050, (header[24].toInt() and 255) or ((header[25].toInt() and 255) shl 8))
+        val sample = ByteArray(2)
+        source.readAt(44, sample)
+        assertArrayEquals(byteArrayOf(0, 0x40), sample)
+        source.close()
+        assertTrue(closed)
+    }
+
+    @Test fun externalPcmStreamsCanUseACompactMonoOutputRate() {
+        val totalFrames = 44_100L
+        var position = 0L
+        var closed = false
+        val pcm = object : PcmStream {
+            override val format = PcmFormat(22_050, 2, totalFrames, 16)
+            override val decoderName = "Test.Synth"
+            override fun read(samples: IntArray, offset: Int, length: Int): Int {
+                if (position >= totalFrames) return -1
+                val count = minOf(length.toLong(), (totalFrames - position) * 2).toInt()
+                repeat(count) { samples[offset + it] = 0x20000000 }
+                position += count / 2
+                return count
+            }
+            override fun close() { closed = true }
+        }
+        val scratch = temporary.newFile("compact-synth.wav")
+        AudioFileProcessor().openWaveSource(pcm, scratch,
+            PcmOutputOptions(sampleRate = 8_000, channels = 1)).use { source ->
+            assertEquals(8_000, source.preparation.format.sampleRate)
+            assertEquals(1, source.preparation.format.channels)
+            assertEquals(16_000L, source.preparation.format.totalFrames)
+            val header = ByteArray(44)
+            source.readAt(0, header)
+            assertEquals(8_000, (header[24].toInt() and 255) or ((header[25].toInt() and 255) shl 8))
+            assertEquals(1, (header[22].toInt() and 255) or ((header[23].toInt() and 255) shl 8))
+        }
+        assertTrue(closed)
+    }
+
     @Test fun positionalReadsPreserveSequentialCursorAndReuseDecodedBytes() {
         val decoder = Decoder()
         open(decoder).use { source ->
