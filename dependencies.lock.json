@@ -3,7 +3,7 @@
   "repositories": {
     "libinfinistream": {
       "url": "https://github.com/gretchycat/libinfinistream.git",
-      "commit": "0dcb1b17b0450d900d0581f2fd2c13bf0dd32e4d"
+      "commit": "6a551a523f3161902b3a1f70902fd2a4ee49a6cd"
     }
   }
 }
