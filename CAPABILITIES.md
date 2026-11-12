@@ -1,6 +1,6 @@
 # Runtime capabilities — sound
 
-Updated 2026-11-04.
+Updated 2026-11-12.
 
 ## Linked dependencies
 
@@ -27,6 +27,11 @@ Queries retain overlapping handlers. Availability is separate from metadata-only
 identity. Resource probes are bounded/cancellable and can narrow operations; real
 API execution still validates input. Use existing Stream sources, positional I/O,
 owned outputs and typed processors; do not duplicate decoders in consumers.
+
+`sound.ansi.presentation` is a lightweight routing declaration for ANSI art and
+music (`ans`, `ansi`, and `asc`). It advertises the Infinimedia presentation target
+and view/play operations without adding terminal rendering or audio playback to
+this library; those remain in the application.
 
 ## Limits
 
