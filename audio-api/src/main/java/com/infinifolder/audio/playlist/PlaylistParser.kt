@@ -34,7 +34,11 @@ data class PlaylistEntry(
     val directoryArtworkMetadataResolved: Boolean = false,
     /** Optional media identity carried by the InfiniMedia JSPF extension. */
     val mimeType: String? = null,
-    val mediaKind: String? = null
+    val mediaKind: String? = null,
+    /** Stable InfiniSelect source reference paired with a potentially temporary location. */
+    val sourceReference: String? = null,
+    val directoryReference: String? = null,
+    val directoryCoverReference: String? = null
 )
 
 /** Playlist parsing is a Sound capability in its own right, separate from audio decoders. */
@@ -323,7 +327,10 @@ object PlaylistParser : MetadataCapabilityHandler {
                     directoryArtworkMetadataResolved = infiniExtension?.optBoolean(
                         "directoryArtworkMetadataResolved", false) == true,
                     mimeType = infiniExtension?.optString("mimeType")?.takeIf { it.isNotBlank() && it != "null" },
-                    mediaKind = infiniExtension?.optString("mediaKind")?.takeIf { it.isNotBlank() && it != "null" }
+                    mediaKind = infiniExtension?.optString("mediaKind")?.takeIf { it.isNotBlank() && it != "null" },
+                    sourceReference = infiniExtension?.optString("sourceReference")?.takeIf { it.isNotBlank() && it != "null" },
+                    directoryReference = infiniExtension?.optString("directoryReference")?.takeIf { it.isNotBlank() && it != "null" },
+                    directoryCoverReference = infiniExtension?.optString("directoryCoverReference")?.takeIf { it.isNotBlank() && it != "null" }
                 ))
             }
         }

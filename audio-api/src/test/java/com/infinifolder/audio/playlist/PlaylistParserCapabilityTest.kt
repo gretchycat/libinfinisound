@@ -47,6 +47,22 @@ class PlaylistParserCapabilityTest {
         assertEquals(MatchConfidence.NONE, PlaylistParser.probe(CapabilityProbeContext(invalid)).confidence)
     }
 
+    @Test fun preservesAuthoritativeInfiniSelectReferencesInJspf() {
+        val jspf = """{"playlist":{"track":[{"location":"content://app.selection/temporary",
+            |"title":"Track","extension":{"io.github.gretchycat.infiniselect":{
+            |"sourceReference":"content://com.infinifolder.documents/document/stable-file",
+            |"directoryUri":"content://com.infinifolder.documents/document/stable-directory",
+            |"directoryReference":"content://com.infinifolder.documents/document/stable-directory",
+            |"directoryCoverUri":"content://app.selection/temporary-cover",
+            |"directoryCoverReference":"content://com.infinifolder.documents/document/stable-cover"}}}]}}""".trimMargin()
+
+        val entry = PlaylistParser.parse("selection.jspf", jspf).single()
+        assertEquals("content://app.selection/temporary", entry.pathOrUri)
+        assertEquals("content://com.infinifolder.documents/document/stable-file", entry.sourceReference)
+        assertEquals("content://com.infinifolder.documents/document/stable-directory", entry.directoryReference)
+        assertEquals("content://com.infinifolder.documents/document/stable-cover", entry.directoryCoverReference)
+    }
+
     @Test fun validatesCueAndCdrdaoTocAndSeparatesCddbToc() {
         val cue = """
             |FILE "disc.bin" BINARY
