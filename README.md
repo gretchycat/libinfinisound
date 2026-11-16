@@ -249,7 +249,12 @@ acceptance is separate from library compilation.
 `PlaybackPcmAnalyzer` follows the playback clock within a cached raw PCM packet,
 emitting bounded windows at roughly 30 Hz rather than advancing past the packet
 after its first window. Compressed analysis retains Android codec decoding and
-position gating. These changes do not establish physical audio-output or receiver
+position gating. `AudioSignalAnalysis.pcm` uses a 2048-frame Hann-windowed FFT,
+averages channel power rather than selecting one side, and maps spectrum bands to
+a consistent -72 dBFS..0 dBFS display range. Its measurements also include
+stereo width/balance, zero-crossing rate and spectral centroid. These are
+analysis values, not instrument labels; drum and tempo heuristics belong to the
+consumer. These changes do not establish physical audio-output or receiver
 acceptance.
 
 The optional FluidLite/GME symbols are resolved at runtime and fail explicitly
