@@ -2,7 +2,7 @@
   "directory": "dependencies",
   "repositories": {
     "libinfinistream": {
-      "url": "https://github.com/gretchycat/libinfinistream.git",
+      "url": "https://github.com/infiniforge/libinfinistream.git",
       "commit": "6a551a523f3161902b3a1f70902fd2a4ee49a6cd"
     }
   }

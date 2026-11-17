@@ -2,10 +2,18 @@
 """Fetch only this checkout's explicitly pinned source dependencies; never update a dirty checkout."""
 from pathlib import Path
 import argparse,json,re,subprocess,sys
+from urllib.parse import urlparse
 
 def git(path,*args,capture=False):
     return subprocess.run(['git','-C',str(path),*args],check=True,text=True,
         stdout=subprocess.PIPE if capture else None).stdout
+
+def repository_identity(url):
+    parsed=urlparse(url)
+    parts=[part for part in parsed.path.strip('/').split('/') if part]
+    if parsed.scheme!='https' or parsed.netloc.lower()!='github.com' or len(parts)!=2:
+        return None
+    return parts[0],parts[-1].removesuffix('.git')
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -24,6 +32,8 @@ def main():
     for name,spec in lock['repositories'].items():
         if not re.fullmatch('[A-Za-z0-9_-]+',name) or not re.fullmatch('[0-9a-f]{40}',spec['commit']):
             raise SystemExit('Invalid dependency name or unpinned revision')
+        if repository_identity(spec['url'])!=('infiniforge',name):
+            raise SystemExit(f'{name}: dependency URL must use https://github.com/infiniforge/{name}.git')
         target=directory/name
         if target.is_symlink():raise SystemExit(f'{target}: dependency symlinks are not reproducible')
         if not (target/'.git').exists():
@@ -45,6 +55,10 @@ def main():
         nested=target/'dependencies.lock.json'
         if nested.exists():
             for child,childspec in json.loads(nested.read_text())['repositories'].items():
-                if lock['repositories'].get(child)!=childspec:raise SystemExit(f'Conflicting or undeclared dependency: {name} -> {child}')
+                selected=lock['repositories'].get(child)
+                if (selected is None or selected['commit']!=childspec['commit']
+                    or repository_identity(selected['url'])!=('infiniforge',child)
+                    or repository_identity(childspec['url']) is None or repository_identity(childspec['url'])[1]!=child):
+                    raise SystemExit(f'Conflicting or undeclared dependency: {name} -> {child}')
         print(f'{name} {spec["commit"]}')
 if __name__=='__main__':main()

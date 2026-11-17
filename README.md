@@ -20,7 +20,7 @@ No application checkout is required. CI uses the same commands from a fresh clon
 
 Runtime discovery: [handler schema, registration, linked dependencies and limits](CAPABILITIES.md).
 
-Audio parsing, decoding, synthesis, metadata, playlists and signal analysis extracted from [InfiniFolder](https://github.com/gretchycat/infinifolder). Output devices, playback queues, UI, source staging and Cast routing are owned by the consuming application.
+Audio parsing, decoding, synthesis, metadata, playlists and signal analysis extracted from [InfiniFolder](https://github.com/infiniforge/infinifolder). Output devices, playback queues, UI, source staging and Cast routing are owned by the consuming application.
 
 ## Modules
 
