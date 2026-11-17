@@ -52,7 +52,7 @@ tests invoke actual services/parsers rather than scripted success responses.
 
 ## New format modules
 
-New audio, tracker, and playlist handlers must validate bytes with bounded magic or their actual parser and expose parsed stream/playlist metadata through `MetadataCapabilityHandler`. Report decoder availability separately from identity, and do not infer codec fields from filename extensions. Follow the shared [Stream conformance rule](../libinfinistream/CAPABILITIES.md#format-module-validation-and-metadata-requirements).
+New audio, tracker, and playlist handlers must validate bytes with bounded magic or their actual parser and expose parsed stream/playlist metadata through `MetadataCapabilityHandler`. Report decoder availability separately from identity, and do not infer codec fields from filename extensions. Follow the shared [Stream conformance rule](https://github.com/infiniforge/libinfinistream/blob/main/CAPABILITIES.md#format-module-validation-and-metadata-requirements).
 
 ## Host audit record
 
