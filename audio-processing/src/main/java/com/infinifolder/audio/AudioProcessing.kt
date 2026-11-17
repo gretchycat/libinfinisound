@@ -120,7 +120,7 @@ object AudioProcessing : AudioProcessor {
     /** Read bounded audio tags while respecting the shared cancellation contract. */
     fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean,
         cancellation: io.github.gretchycat.infinistream.CancellationToken): AudioTags =
-        readTags(source, includeArtwork, cancellation, 16L * 1024 * 1024, 512, 3_000_000_000L)
+        readTags(source, includeArtwork, cancellation, 16L * 1024 * 1024, 512, 10_000_000_000L)
 
     /** Read tags within the caller's metadata budgets; no decoder may widen those limits. */
     fun readTags(source: io.github.gretchycat.infinistream.SourceResource, includeArtwork: Boolean,
