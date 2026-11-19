@@ -89,3 +89,13 @@ Unimplemented chiptune variants report unsupported. SFZ requires readable, decod
 uses their actual rate/channels; sampleless GUS patches fail. MIDI note synthesis
 and previews of valid sample banks remain input-driven. No decoder fallback may
 replace failed input with a test signal.
+
+## PCM selection effects
+
+The portable audio-core PcmEffects API borrows finite interleaved float PCM and
+returns an independent copy with only the selected frame range processed. It owns
+polarity inversion, peak/DC normalization, biquad low/high-pass and notch filters,
+and linked noise gating. Inputs are never modified; output and resource budgets
+are validated and thread interruption cancels processing. Applications own range
+selection, project/history state, preview, playback and export. See
+[PCM effects](pcm-effects.md) for parameters, smoothing and limits.

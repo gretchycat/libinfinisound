@@ -62,11 +62,11 @@ Choose one dependency:
 
 ```kotlin
 // Contracts and playlist parsing only:
-implementation("io.github.gretchycat.libinfinisound:audio-api:0.2.0")
+implementation("io.github.gretchycat.libinfinisound:audio-api:0.2.1")
 // Portable processing for a desktop JVM:
-implementation("io.github.gretchycat.libinfinisound:audio-core:0.2.0")
+implementation("io.github.gretchycat.libinfinisound:audio-core:0.2.1")
 // Android composition, including the portable core and API:
-implementation("io.github.gretchycat.libinfinisound:audio-processing:0.2.0")
+implementation("io.github.gretchycat.libinfinisound:audio-processing:0.2.1")
 ```
 
 The Sound library exposes playlist parsing for M3U/M3U8, PLS, XSPF, JSPF, CUE,
@@ -287,3 +287,7 @@ frames are unchanged. The host APK builds with this change; listening acceptance
 on a handset remains pending. No additional tests were added or run.
 
 The Termux native tracker dependency versions are pinned in `termux-native-dependencies.json`. The build checks installed versions; update this manifest deliberately when updating that toolchain. Bundled copyright texts accompany the copied native libraries. Standard NDK builds do not use these system packages.
+
+Portable selection effects: [PCM effects API](docs/pcm-effects.md) provides polarity
+inversion, peak/DC normalization, low/high-pass and notch filters, and a linked
+noise gate without an Android dependency.

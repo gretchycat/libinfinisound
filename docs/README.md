@@ -20,3 +20,5 @@ Reusable audio parsing, decoding, synthesis, metadata, playlists, and signal pro
 
 - [Portability roadmap](portability-roadmap.md).
 - [Validation of portable/native decoding](validation.md).
+
+- [PCM effects](pcm-effects.md): immutable selection processing, filters, gate and normalization.
