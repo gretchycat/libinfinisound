@@ -286,7 +286,7 @@ note boundaries within the existing gate; note/rest durations and articulation
 frames are unchanged. The host APK builds with this change; listening acceptance
 on a handset remains pending. No additional tests were added or run.
 
-The Termux native tracker dependency versions are pinned in `termux-native-dependencies.json`. The build checks installed versions; update this manifest deliberately when updating that toolchain. Bundled copyright texts accompany the copied native libraries. Standard NDK builds do not use these system packages.
+The Termux native tracker dependency versions are pinned in `termux-native-dependencies.json`. The build checks installed versions; update this manifest deliberately when updating that toolchain. The 2026-11-20 Termux validation updated libopenmpt to 0.8.10 and libc++ to 30 to match the installed packages; the remaining pins were unchanged. Bundled copyright texts accompany the copied native libraries. Standard NDK builds do not use these system packages.
 
 Portable selection effects: [PCM effects API](docs/pcm-effects.md) provides polarity
 inversion, peak/DC normalization, low/high-pass and notch filters, and a linked
