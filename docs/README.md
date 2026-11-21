@@ -22,3 +22,4 @@ Reusable audio parsing, decoding, synthesis, metadata, playlists, and signal pro
 - [Validation of portable/native decoding](validation.md).
 
 - [PCM effects](pcm-effects.md): immutable selection processing, filters, gate and normalization.
+- [Tempo and transient estimation](tempo-estimation.md): optional estimate and event contract for visual-reactive hosts.
